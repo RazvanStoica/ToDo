@@ -183,6 +183,26 @@
             color: #888;
             padding: 40px;
         }
+
+        .task-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .task-timestamps {
+            display: flex;
+            gap: 15px;
+            font-size: 11px;
+            color: #999;
+        }
+
+        .task-timestamps span {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
     </style>
 </head>
 <body>
@@ -256,10 +276,19 @@
                 li.className = 'task-item' + (task.completed ? ' completed' : '');
 
                 const priority = task.priority || 'medium';
+                const createdAt = task.createdAt ? formatDate(task.createdAt) : '';
+                const completedAt = task.completedAt ? formatDate(task.completedAt) : '';
+
                 li.innerHTML = `
                     <input type="checkbox" class="task-checkbox" ${task.completed ? 'checked' : ''}>
                     <span class="priority-badge ${priority}">${priority}</span>
-                    <span class="task-text">${escapeHtml(task.text)}</span>
+                    <div class="task-content">
+                        <span class="task-text">${escapeHtml(task.text)}</span>
+                        <div class="task-timestamps">
+                            ${createdAt ? `<span>Created: ${createdAt}</span>` : ''}
+                            ${completedAt ? `<span>Completed: ${completedAt}</span>` : ''}
+                        </div>
+                    </div>
                     <button class="delete-btn">Delete</button>
                 `;
 
@@ -279,6 +308,18 @@
             return div.innerHTML;
         }
 
+        function formatDate(isoString) {
+            if (!isoString) return '';
+            const date = new Date(isoString);
+            return date.toLocaleDateString(undefined, {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
         function addTask() {
             const text = taskInput.value.trim();
             if (!text) return;
@@ -290,7 +331,8 @@
                 id: Date.now(),
                 text: text,
                 completed: false,
-                priority: priority
+                priority: priority,
+                createdAt: new Date().toISOString()
             };
 
             tasks.push(task);
@@ -304,6 +346,11 @@
             const task = tasks.find(t => t.id === id);
             if (task) {
                 task.completed = !task.completed;
+                if (task.completed) {
+                    task.completedAt = new Date().toISOString();
+                } else {
+                    delete task.completedAt;
+                }
                 saveTasks();
                 renderTasks();
             }
