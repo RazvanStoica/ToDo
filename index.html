@@ -218,6 +218,24 @@
             gap: 3px;
         }
 
+        .search-section {
+            margin-bottom: 15px;
+        }
+
+        #search-input {
+            width: 100%;
+            padding: 10px 15px;
+            font-size: 14px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        #search-input:focus {
+            border-color: #007bff;
+        }
+
         .filter-section {
             display: flex;
             gap: 10px;
@@ -290,6 +308,10 @@
             <button id="add-btn">Add</button>
         </div>
 
+        <div class="search-section">
+            <input type="text" id="search-input" placeholder="Search tasks...">
+        </div>
+
         <div class="filter-section">
             <button class="filter-btn active" data-filter="all">All</button>
             <button class="filter-btn" data-filter="active">Active</button>
@@ -306,10 +328,12 @@
         const addBtn = document.getElementById('add-btn');
         const pagination = document.getElementById('pagination');
         const taskList = document.getElementById('task-list');
+        const searchInput = document.getElementById('search-input');
 
         let tasks = [];
         let currentFilter = 'all';
         let currentPage = 1;
+        let searchQuery = '';
         const tasksPerPage = 20;
 
         async function loadTasks() {
@@ -346,10 +370,21 @@
                 filteredTasks = tasks.filter(t => t.completed);
             }
 
+            // Apply search
+            if (searchQuery) {
+                const query = searchQuery.toLowerCase();
+                filteredTasks = filteredTasks.filter(t =>
+                    t.text.toLowerCase().includes(query)
+                );
+            }
+
             if (filteredTasks.length === 0) {
-                const message = tasks.length === 0
-                    ? 'No tasks yet. Add one above!'
-                    : 'No tasks match the current filter.';
+                let message = 'No tasks yet. Add one above!';
+                if (tasks.length > 0) {
+                    message = searchQuery
+                        ? 'No tasks match your search.'
+                        : 'No tasks match the current filter.';
+                }
                 taskList.innerHTML = `<li class="empty-message">${message}</li>`;
                 return;
             }
@@ -573,6 +608,13 @@
             if (e.key === 'Enter') {
                 addTask();
             }
+        });
+
+        // Search
+        searchInput.addEventListener('input', (e) => {
+            searchQuery = e.target.value;
+            currentPage = 1;
+            renderTasks();
         });
 
         // Filter buttons

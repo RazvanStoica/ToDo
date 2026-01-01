@@ -52,6 +52,7 @@ Then open http://localhost:3000 in your browser.
 - **Mark tasks** as complete/incomplete
 - **Delete tasks**
 - **Change priority** using colored buttons on hover
+- **Search tasks** by text
 - **Filter tasks** by All, Active, or Completed
 - **Pagination** - automatic pagination when more than 20 tasks
 - **Timestamps** for creation and completion
