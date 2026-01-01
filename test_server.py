@@ -16,6 +16,11 @@ import server
 class TestDatabaseOperations:
     """Tests for database read/write operations."""
 
+    @pytest.fixture(autouse=True)
+    def reset_cache(self):
+        """Reset the cache before each test."""
+        server._task_cache = None
+
     @pytest.fixture
     def mock_connection(self):
         """Create a mock database connection."""
@@ -27,18 +32,18 @@ class TestDatabaseOperations:
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
         return mock_conn, mock_cursor
 
-    def test_read_tasks_empty(self, mock_connection):
-        """Test reading tasks when database is empty."""
+    def test_load_tasks_from_db_empty(self, mock_connection):
+        """Test loading tasks when database is empty."""
         mock_conn, mock_cursor = mock_connection
         mock_cursor.fetchall.return_value = []
 
         with patch.object(server, 'get_connection', return_value=mock_conn):
-            tasks = server.read_tasks()
+            tasks = server.load_tasks_from_db()
 
         assert tasks == []
 
-    def test_read_tasks_with_data(self, mock_connection):
-        """Test reading tasks with data in database."""
+    def test_load_tasks_from_db_with_data(self, mock_connection):
+        """Test loading tasks with data in database."""
         mock_conn, mock_cursor = mock_connection
         from datetime import datetime, timezone
 
@@ -54,19 +59,30 @@ class TestDatabaseOperations:
         ]
 
         with patch.object(server, 'get_connection', return_value=mock_conn):
-            tasks = server.read_tasks()
+            tasks = server.load_tasks_from_db()
 
         assert len(tasks) == 1
         assert tasks[0]['text'] == 'Test task'
         assert tasks[0]['priority'] == 'high'
         assert tasks[0]['completed'] == False
 
-    def test_read_tasks_handles_error(self, mock_connection):
-        """Test that read_tasks handles database errors gracefully."""
+    def test_load_tasks_from_db_handles_error(self, mock_connection):
+        """Test that load_tasks_from_db handles database errors gracefully."""
         with patch.object(server, 'get_connection', side_effect=Exception("DB Error")):
-            tasks = server.read_tasks()
+            tasks = server.load_tasks_from_db()
 
         assert tasks == []
+
+    def test_read_tasks_uses_cache(self, mock_connection):
+        """Test that read_tasks returns cached data."""
+        # Set cache directly
+        server._task_cache = [{'id': 1, 'text': 'Cached task'}]
+
+        # Should return cache without hitting database
+        tasks = server.read_tasks()
+
+        assert len(tasks) == 1
+        assert tasks[0]['text'] == 'Cached task'
 
     def test_save_tasks_insert_new(self, mock_connection):
         """Test saving a new task."""
