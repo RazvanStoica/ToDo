@@ -43,5 +43,19 @@
     "priority": "medium",
     "createdAt": "2026-01-01T00:49:13.918Z",
     "completedAt": "2026-01-01T00:49:21.808Z"
+  },
+  {
+    "id": 1767228847433,
+    "text": "new high importance task",
+    "completed": false,
+    "priority": "high",
+    "createdAt": "2026-01-01T00:54:07.433Z"
+  },
+  {
+    "id": 1767228856393,
+    "text": "a new low importance task",
+    "completed": false,
+    "priority": "low",
+    "createdAt": "2026-01-01T00:54:16.393Z"
   }
 ]
