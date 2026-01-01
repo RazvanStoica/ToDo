@@ -53,6 +53,7 @@ Then open http://localhost:3000 in your browser.
 - **Delete tasks**
 - **Change priority** using colored buttons on hover
 - **Filter tasks** by All, Active, or Completed
+- **Pagination** - automatic pagination when more than 20 tasks
 - **Timestamps** for creation and completion
 - **Color-coded priorities** - task boxes are colored by importance
 - **Smart sorting** - tasks sorted by priority (high to low), then by date

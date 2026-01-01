@@ -244,6 +244,41 @@
             border-color: #007bff;
             color: white;
         }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            margin-top: 20px;
+            padding: 10px;
+        }
+
+        .pagination-btn {
+            padding: 8px 16px;
+            font-size: 14px;
+            border: 2px solid #ddd;
+            background-color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .pagination-btn:hover:not(:disabled) {
+            border-color: #007bff;
+            background-color: #007bff;
+            color: white;
+        }
+
+        .pagination-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pagination-info {
+            font-size: 14px;
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -262,15 +297,20 @@
         </div>
 
         <ul class="task-list" id="task-list"></ul>
+
+        <div class="pagination" id="pagination"></div>
     </div>
 
     <script>
         const taskInput = document.getElementById('task-input');
         const addBtn = document.getElementById('add-btn');
+        const pagination = document.getElementById('pagination');
         const taskList = document.getElementById('task-list');
 
         let tasks = [];
         let currentFilter = 'all';
+        let currentPage = 1;
+        const tasksPerPage = 20;
 
         async function loadTasks() {
             try {
@@ -296,6 +336,7 @@
 
         function renderTasks() {
             taskList.innerHTML = '';
+            pagination.innerHTML = '';
 
             // Apply filter
             let filteredTasks = tasks;
@@ -326,7 +367,15 @@
             const completed = filteredTasks.filter(t => t.completed).sort(sortByPriorityAndDate);
             const sortedTasks = [...uncompleted, ...completed];
 
-            sortedTasks.forEach(task => {
+            // Pagination
+            const totalPages = Math.ceil(sortedTasks.length / tasksPerPage);
+            if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+
+            const startIndex = (currentPage - 1) * tasksPerPage;
+            const paginatedTasks = sortedTasks.slice(startIndex, startIndex + tasksPerPage);
+
+            paginatedTasks.forEach(task => {
                 const li = document.createElement('li');
                 const priority = task.priority || 'medium';
                 li.className = 'task-item priority-' + priority + (task.completed ? ' completed' : '');
@@ -371,6 +420,39 @@
 
                 taskList.appendChild(li);
             });
+
+            // Render pagination controls if needed
+            if (totalPages > 1) {
+                const prevBtn = document.createElement('button');
+                prevBtn.className = 'pagination-btn';
+                prevBtn.textContent = 'Previous';
+                prevBtn.disabled = currentPage === 1;
+                prevBtn.addEventListener('click', () => {
+                    if (currentPage > 1) {
+                        currentPage--;
+                        renderTasks();
+                    }
+                });
+
+                const pageInfo = document.createElement('span');
+                pageInfo.className = 'pagination-info';
+                pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+
+                const nextBtn = document.createElement('button');
+                nextBtn.className = 'pagination-btn';
+                nextBtn.textContent = 'Next';
+                nextBtn.disabled = currentPage === totalPages;
+                nextBtn.addEventListener('click', () => {
+                    if (currentPage < totalPages) {
+                        currentPage++;
+                        renderTasks();
+                    }
+                });
+
+                pagination.appendChild(prevBtn);
+                pagination.appendChild(pageInfo);
+                pagination.appendChild(nextBtn);
+            }
         }
 
         function escapeHtml(text) {
@@ -499,6 +581,7 @@
                 document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 currentFilter = btn.dataset.filter;
+                currentPage = 1;
                 renderTasks();
             });
         });
