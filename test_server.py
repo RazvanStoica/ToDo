@@ -17,13 +17,6 @@ import server
 class TestDatabaseOperations:
     """Tests for database read/write operations."""
 
-    @pytest.fixture(autouse=True)
-    def reset_cache(self):
-        """Reset the cache before each test."""
-        server._task_cache = None
-        yield
-        server._task_cache = None
-
     @pytest.fixture
     def mock_connection(self):
         """Create a mock database connection."""
@@ -116,107 +109,8 @@ class TestDatabaseOperations:
         assert tasks[2]['text'] == 'Task 3'
 
 
-class TestCacheOperations:
-    """Tests for in-memory cache operations."""
-
-    @pytest.fixture(autouse=True)
-    def reset_cache(self):
-        """Reset the cache before each test."""
-        server._task_cache = None
-        yield
-        server._task_cache = None
-
-    @pytest.fixture
-    def mock_connection(self):
-        """Create a mock database connection."""
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-        mock_conn.__exit__ = MagicMock(return_value=False)
-        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
-        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
-        return mock_conn, mock_cursor
-
-    def test_read_tasks_uses_cache(self):
-        """Test that read_tasks returns cached data without DB call."""
-        server._task_cache = [{'id': 1, 'text': 'Cached task'}]
-
-        tasks = server.read_tasks()
-
-        assert len(tasks) == 1
-        assert tasks[0]['text'] == 'Cached task'
-
-    def test_read_tasks_initializes_cache_when_none(self, mock_connection):
-        """Test that read_tasks initializes cache when it's None."""
-        mock_conn, mock_cursor = mock_connection
-        mock_cursor.fetchall.return_value = [
-            {'id': 1, 'text': 'DB task', 'completed': False, 'priority': 'high', 'createdAt': None, 'completedAt': None}
-        ]
-
-        assert server._task_cache is None
-
-        with patch.object(server, 'get_connection', return_value=mock_conn):
-            tasks = server.read_tasks()
-
-        assert server._task_cache is not None
-        assert len(tasks) == 1
-
-    def test_init_cache_populates_cache(self, mock_connection):
-        """Test that init_cache loads data from database."""
-        mock_conn, mock_cursor = mock_connection
-        mock_cursor.fetchall.return_value = [
-            {'id': 1, 'text': 'Task 1', 'completed': False, 'priority': 'high', 'createdAt': None, 'completedAt': None},
-            {'id': 2, 'text': 'Task 2', 'completed': True, 'priority': 'low', 'createdAt': None, 'completedAt': None},
-        ]
-
-        with patch.object(server, 'get_connection', return_value=mock_conn):
-            server.init_cache()
-
-        assert server._task_cache is not None
-        assert len(server._task_cache) == 2
-
-    def test_save_tasks_updates_cache(self, mock_connection):
-        """Test that save_tasks updates the cache after saving."""
-        mock_conn, mock_cursor = mock_connection
-        mock_cursor.fetchall.return_value = []
-
-        tasks = [
-            {'id': 1, 'text': 'New task', 'completed': False, 'priority': 'medium'}
-        ]
-
-        with patch.object(server, 'get_connection', return_value=mock_conn):
-            server.save_tasks(tasks)
-
-        assert server._task_cache is not None
-        assert len(server._task_cache) == 1
-        assert server._task_cache[0]['text'] == 'New task'
-
-    def test_cache_is_copy_not_reference(self, mock_connection):
-        """Test that cache stores a copy, not a reference."""
-        mock_conn, mock_cursor = mock_connection
-        mock_cursor.fetchall.return_value = []
-
-        tasks = [{'id': 1, 'text': 'Original', 'completed': False}]
-
-        with patch.object(server, 'get_connection', return_value=mock_conn):
-            server.save_tasks(tasks)
-
-        # Modify original list
-        tasks[0]['text'] = 'Modified'
-
-        # Cache should still have original value
-        assert server._task_cache[0]['text'] == 'Original'
-
-
 class TestSaveOperations:
     """Tests for save operations."""
-
-    @pytest.fixture(autouse=True)
-    def reset_cache(self):
-        """Reset the cache before each test."""
-        server._task_cache = None
-        yield
-        server._task_cache = None
 
     @pytest.fixture
     def mock_connection(self):
@@ -307,13 +201,6 @@ class TestSaveOperations:
 
 class TestHTTPHandler:
     """Tests for HTTP request handling."""
-
-    @pytest.fixture(autouse=True)
-    def reset_cache(self):
-        """Reset the cache before each test."""
-        server._task_cache = None
-        yield
-        server._task_cache = None
 
     @pytest.fixture
     def handler(self):

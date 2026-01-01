@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import copy
 import http.server
 import json
 import os
@@ -14,9 +13,6 @@ def load_config():
 
 config = load_config()
 PORT = config['server']['port']
-
-# In-memory cache
-_task_cache = None
 
 def get_connection():
     db = config['database']
@@ -54,22 +50,12 @@ def load_tasks_from_db():
         print(f"Error reading tasks from database: {e}")
         return []
 
-def init_cache():
-    """Initialize the cache from database."""
-    global _task_cache
-    _task_cache = load_tasks_from_db()
-    print(f"Cache initialized with {len(_task_cache)} tasks")
-
 def read_tasks():
-    """Read tasks from cache (fast)."""
-    global _task_cache
-    if _task_cache is None:
-        init_cache()
-    return _task_cache
+    """Read tasks from database."""
+    return load_tasks_from_db()
 
 def save_tasks(tasks):
-    """Save tasks to database and update cache."""
-    global _task_cache
+    """Save tasks to database."""
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -102,9 +88,6 @@ def save_tasks(tasks):
                           task.get('priority', 'medium'), created_at, completed_at))
 
                 conn.commit()
-
-        # Update cache after successful save (deep copy to avoid reference issues)
-        _task_cache = copy.deepcopy(tasks)
     except Exception as e:
         print(f"Error saving tasks: {e}")
 
@@ -151,9 +134,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass  # Suppress request logging
 
 if __name__ == '__main__':
-    # Initialize cache on startup
-    init_cache()
-
     server = http.server.HTTPServer(('', PORT), Handler)
     print(f'ToDo app running at http://localhost:{PORT}')
     server.serve_forever()
