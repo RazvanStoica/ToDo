@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import copy
 import http.server
 import json
 import os
@@ -102,8 +103,8 @@ def save_tasks(tasks):
 
                 conn.commit()
 
-        # Update cache after successful save
-        _task_cache = tasks.copy()
+        # Update cache after successful save (deep copy to avoid reference issues)
+        _task_cache = copy.deepcopy(tasks)
     except Exception as e:
         print(f"Error saving tasks: {e}")
 
