@@ -5,11 +5,24 @@ import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-PORT = 3000
-DB_NAME = 'todo'
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
+
+def load_config():
+    with open(CONFIG_FILE, 'r') as f:
+        return json.load(f)
+
+config = load_config()
+PORT = config['server']['port']
 
 def get_connection():
-    return psycopg2.connect(dbname=DB_NAME)
+    db = config['database']
+    return psycopg2.connect(
+        host=db['host'] or None,
+        port=db['port'] or None,
+        dbname=db['name'],
+        user=db['user'] or None,
+        password=db['password'] or None
+    )
 
 def read_tasks():
     try:
