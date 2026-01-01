@@ -162,6 +162,33 @@
             align-items: center;
             gap: 3px;
         }
+
+        .filter-section {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+
+        .filter-btn {
+            padding: 8px 16px;
+            font-size: 14px;
+            border: 2px solid #ddd;
+            background-color: white;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .filter-btn:hover {
+            border-color: #007bff;
+        }
+
+        .filter-btn.active {
+            background-color: #007bff;
+            border-color: #007bff;
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -173,6 +200,12 @@
             <button id="add-btn">Add</button>
         </div>
 
+        <div class="filter-section">
+            <button class="filter-btn active" data-filter="all">All</button>
+            <button class="filter-btn" data-filter="active">Active</button>
+            <button class="filter-btn" data-filter="completed">Completed</button>
+        </div>
+
         <ul class="task-list" id="task-list"></ul>
     </div>
 
@@ -182,6 +215,7 @@
         const taskList = document.getElementById('task-list');
 
         let tasks = [];
+        let currentFilter = 'all';
 
         async function loadTasks() {
             try {
@@ -208,8 +242,19 @@
         function renderTasks() {
             taskList.innerHTML = '';
 
-            if (tasks.length === 0) {
-                taskList.innerHTML = '<li class="empty-message">No tasks yet. Add one above!</li>';
+            // Apply filter
+            let filteredTasks = tasks;
+            if (currentFilter === 'active') {
+                filteredTasks = tasks.filter(t => !t.completed);
+            } else if (currentFilter === 'completed') {
+                filteredTasks = tasks.filter(t => t.completed);
+            }
+
+            if (filteredTasks.length === 0) {
+                const message = tasks.length === 0
+                    ? 'No tasks yet. Add one above!'
+                    : 'No tasks match the current filter.';
+                taskList.innerHTML = `<li class="empty-message">${message}</li>`;
                 return;
             }
 
@@ -222,8 +267,8 @@
                 if (pA !== pB) return pA - pB;
                 return (b.id || 0) - (a.id || 0);
             };
-            const uncompleted = tasks.filter(t => !t.completed).sort(sortByPriorityAndDate);
-            const completed = tasks.filter(t => t.completed).sort(sortByPriorityAndDate);
+            const uncompleted = filteredTasks.filter(t => !t.completed).sort(sortByPriorityAndDate);
+            const completed = filteredTasks.filter(t => t.completed).sort(sortByPriorityAndDate);
             const sortedTasks = [...uncompleted, ...completed];
 
             sortedTasks.forEach(task => {
@@ -330,6 +375,16 @@
             if (e.key === 'Enter') {
                 addTask();
             }
+        });
+
+        // Filter buttons
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentFilter = btn.dataset.filter;
+                renderTasks();
+            });
         });
 
         // Initial load
