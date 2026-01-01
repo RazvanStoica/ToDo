@@ -7,7 +7,28 @@ A simple web-based task manager with priority levels and timestamps, backed by P
 - Python 3
 - PostgreSQL
 
-## Setup
+Or use Docker (see below).
+
+## Docker Setup (Recommended)
+
+Run with Docker Compose:
+```bash
+docker-compose up -d
+```
+
+This starts both the app and PostgreSQL. Open http://localhost:3000.
+
+To stop:
+```bash
+docker-compose down
+```
+
+To stop and remove data:
+```bash
+docker-compose down -v
+```
+
+## Manual Setup
 
 1. Install dependencies:
    ```bash
