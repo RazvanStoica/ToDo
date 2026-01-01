@@ -154,6 +154,20 @@
             background-color: #28a745;
         }
 
+        .edit-btn {
+            padding: 5px 10px;
+            font-size: 14px;
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .edit-btn:hover {
+            background-color: #545b62;
+        }
+
         .delete-btn {
             padding: 5px 10px;
             font-size: 14px;
@@ -167,6 +181,15 @@
 
         .delete-btn:hover {
             background-color: #c82333;
+        }
+
+        .task-text-input {
+            flex: 1;
+            font-size: 16px;
+            padding: 4px 8px;
+            border: 2px solid #007bff;
+            border-radius: 4px;
+            outline: none;
         }
 
         .empty-message {
@@ -324,6 +347,7 @@
                         <button class="priority-btn high" title="High priority"></button>
                         <button class="priority-btn medium" title="Medium priority"></button>
                         <button class="priority-btn low" title="Low priority"></button>
+                        <button class="edit-btn">Edit</button>
                         <button class="delete-btn">Delete</button>
                     </div>
                 `;
@@ -338,6 +362,9 @@
                         changePriority(task.id, newPriority);
                     });
                 });
+
+                const editBtn = li.querySelector('.edit-btn');
+                editBtn.addEventListener('click', () => startEdit(li, task));
 
                 const deleteBtn = li.querySelector('.delete-btn');
                 deleteBtn.addEventListener('click', () => deleteTask(task.id));
@@ -421,6 +448,41 @@
                 saveTasks();
                 renderTasks();
             }
+        }
+
+        function startEdit(li, task) {
+            const taskContent = li.querySelector('.task-content');
+            const taskText = li.querySelector('.task-text');
+            const originalText = task.text;
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'task-text-input';
+            input.value = originalText;
+
+            taskText.replaceWith(input);
+            input.focus();
+            input.select();
+
+            const saveEdit = () => {
+                const newText = input.value.trim();
+                if (newText && newText !== originalText) {
+                    task.text = newText;
+                    saveTasks();
+                }
+                renderTasks();
+            };
+
+            input.addEventListener('blur', saveEdit);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    input.blur();
+                } else if (e.key === 'Escape') {
+                    input.value = originalText;
+                    input.blur();
+                }
+            });
         }
 
         addBtn.addEventListener('click', addTask);

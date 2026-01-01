@@ -48,10 +48,14 @@ Then open http://localhost:3000 in your browser.
 ## Features
 
 - **Add tasks** with priority levels
+- **Edit tasks** inline by clicking the Edit button
 - **Mark tasks** as complete/incomplete
 - **Delete tasks**
+- **Change priority** using colored buttons on hover
+- **Filter tasks** by All, Active, or Completed
 - **Timestamps** for creation and completion
 - **Color-coded priorities** - task boxes are colored by importance
+- **Smart sorting** - tasks sorted by priority (high to low), then by date
 
 ## Setting Priority
 
@@ -67,3 +71,11 @@ Use text prefixes when adding a task:
 - `!h Call the doctor` - creates a high priority task
 - `!l Water plants` - creates a low priority task
 - `Buy groceries` - defaults to medium priority
+
+You can also change the priority of existing tasks by hovering over a task and clicking the colored priority buttons.
+
+## Keyboard Shortcuts
+
+When editing a task:
+- **Enter** - save changes
+- **Escape** - cancel editing
