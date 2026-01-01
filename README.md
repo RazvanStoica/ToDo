@@ -81,3 +81,17 @@ You can also change the priority of existing tasks by hovering over a task and c
 When editing a task:
 - **Enter** - save changes
 - **Escape** - cancel editing
+
+## Testing
+
+Run the unit tests:
+```bash
+source venv/bin/activate
+pip install pytest pytest-cov
+python -m pytest test_server.py -v
+```
+
+Run with coverage:
+```bash
+python -m pytest test_server.py --cov=server --cov-report=term-missing
+```
