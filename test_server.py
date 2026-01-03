@@ -3,6 +3,7 @@ import json
 import pytest
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
+from flask import redirect
 
 # Import the server module
 import server
@@ -313,6 +314,17 @@ class TestFlaskApp:
         response = client.get('/auth/google')
         assert response.status_code == 302
         assert 'accounts.google.com' in response.location or response.status_code == 302
+
+    def test_auth_google_forces_account_selection(self, client):
+        """Test that /auth/google includes prompt=select_account to allow switching users."""
+        with patch.object(server.google, 'authorize_redirect') as mock_redirect:
+            mock_redirect.return_value = redirect('/mock-oauth')
+            client.get('/auth/google')
+            mock_redirect.assert_called_once()
+            # Verify prompt='select_account' is passed
+            call_kwargs = mock_redirect.call_args
+            assert call_kwargs[1].get('prompt') == 'select_account', \
+                "OAuth should force account selection with prompt='select_account'"
 
 
 class TestAuthHelpers:
