@@ -1,6 +1,6 @@
 # ToDo App
 
-A simple web-based task manager with priority levels and timestamps, backed by PostgreSQL.
+A simple web-based task manager with priority levels, timestamps, and Google OAuth authentication. Each user has their own private task list. Backed by PostgreSQL.
 
 ## Requirements
 
@@ -11,10 +11,16 @@ Or use Docker (see below).
 
 ## Docker Setup (Recommended)
 
-Run with Docker Compose:
-```bash
-docker-compose up -d
-```
+1. Create environment file:
+   ```bash
+   cp .env.example .env
+   ```
+   Edit `.env` with your Google OAuth credentials (see [Google OAuth Setup](#google-oauth-setup)).
+
+2. Run with Docker Compose:
+   ```bash
+   docker-compose up -d
+   ```
 
 This starts both the app and PostgreSQL. Open http://localhost:3000.
 
@@ -34,28 +40,60 @@ docker-compose down -v
    ```bash
    python3 -m venv venv
    source venv/bin/activate
-   pip install psycopg2-binary
+   pip install -r requirements.txt
    ```
 
 2. Create config file:
    ```bash
    cp config.example.json config.json
    ```
-   Edit `config.json` with your database connection details.
+   Edit `config.json` with your database connection details and OAuth configuration.
 
-3. Create the database and table:
+3. Create the database and tables:
    ```bash
    createdb todo
-   psql -d todo -c "
-   CREATE TABLE tasks (
-       id BIGINT PRIMARY KEY,
-       text TEXT NOT NULL,
-       completed BOOLEAN DEFAULT FALSE,
-       priority VARCHAR(10) DEFAULT 'medium',
-       created_at TIMESTAMPTZ,
-       completed_at TIMESTAMPTZ
-   );"
+   psql -d todo -f init.sql
    ```
+
+## Google OAuth Setup
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select an existing one
+3. Navigate to **APIs & Services > Credentials**
+4. Click **Create Credentials > OAuth client ID**
+5. Select **Web application**
+6. Add authorized redirect URI: `http://localhost:3000/auth/google/callback`
+7. Copy the Client ID and Client Secret
+
+Add credentials to `config.json`:
+```json
+{
+  "oauth": {
+    "google_client_id": "your-client-id.apps.googleusercontent.com",
+    "google_client_secret": "your-client-secret",
+    "redirect_uri": "http://localhost:3000/auth/google/callback"
+  },
+  "auth": {
+    "email_whitelist": ["user1@example.com", "user2@example.com"],
+    "allow_any_email": false
+  }
+}
+```
+
+Or use environment variables (recommended for production):
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `SECRET_KEY`
+- `OAUTH_REDIRECT_URI`
+
+## Access Control
+
+The app uses email whitelisting to control access:
+
+- **email_whitelist**: List of allowed email addresses
+- **allow_any_email**: Set to `true` to allow any Google account (bypasses whitelist)
+
+Users not on the whitelist will see an "Access Denied" page after attempting to sign in.
 
 ## Running the App
 
@@ -68,6 +106,9 @@ Then open http://localhost:3000 in your browser.
 
 ## Features
 
+- **Google OAuth** - Secure authentication with Google accounts
+- **Private task lists** - Each user has their own tasks
+- **Email whitelist** - Control who can access the app
 - **Add tasks** with priority levels
 - **Edit tasks** inline by clicking the Edit button
 - **Mark tasks** as complete/incomplete
@@ -116,3 +157,11 @@ Run with coverage:
 ```bash
 python -m pytest test_server.py --cov=server --cov-report=term-missing
 ```
+
+## Production Deployment
+
+For production:
+1. Use HTTPS (required by Google OAuth)
+2. Set a strong `SECRET_KEY` environment variable
+3. Use a production WSGI server (e.g., Gunicorn)
+4. Update the OAuth redirect URI to your production domain
