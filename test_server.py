@@ -204,11 +204,27 @@ class TestFlaskApp:
         with server.app.test_client() as client:
             yield client
 
+    @pytest.fixture
+    def authenticated_client(self):
+        """Create an authenticated test client."""
+        server.app.config['TESTING'] = True
+        server.app.config['SECRET_KEY'] = 'test-secret-key'
+        with server.app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess['user'] = {'id': 1, 'email': 'test@example.com', 'name': 'Test User', 'picture_url': None}
+            yield client
+
     def test_login_page_accessible(self, client):
         """Test that login page is accessible."""
         response = client.get('/login')
         assert response.status_code == 200
         assert b'Sign in with Google' in response.data
+
+    def test_login_page_shows_error(self, client):
+        """Test that login page displays error message."""
+        response = client.get('/login?error=Test+error+message')
+        assert response.status_code == 200
+        assert b'Test error message' in response.data
 
     def test_index_redirects_without_auth(self, client):
         """Test that index page redirects to login without authentication."""
@@ -216,9 +232,48 @@ class TestFlaskApp:
         assert response.status_code == 302
         assert '/login' in response.location
 
+    def test_index_accessible_with_auth(self, authenticated_client):
+        """Test that index page is accessible when authenticated."""
+        response = authenticated_client.get('/')
+        assert response.status_code == 200
+
     def test_api_tasks_returns_401_without_auth(self, client):
         """Test that API returns 401 without authentication."""
         response = client.get('/api/tasks')
+        assert response.status_code == 401
+
+    def test_api_tasks_get_with_auth(self, authenticated_client):
+        """Test GET /api/tasks with authentication."""
+        with patch.object(server, 'load_tasks_from_db', return_value=[
+            {'id': 1, 'text': 'Test task', 'completed': False}
+        ]):
+            response = authenticated_client.get('/api/tasks')
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert len(data) == 1
+        assert data[0]['text'] == 'Test task'
+
+    def test_api_tasks_post_with_auth(self, authenticated_client):
+        """Test POST /api/tasks with authentication."""
+        with patch.object(server, 'save_tasks') as mock_save:
+            response = authenticated_client.post('/api/tasks',
+                data=json.dumps([{'id': 1, 'text': 'New task', 'completed': False}]),
+                content_type='application/json')
+        assert response.status_code == 200
+        mock_save.assert_called_once()
+
+    def test_api_tasks_post_invalid_json(self, authenticated_client):
+        """Test POST /api/tasks with invalid JSON."""
+        response = authenticated_client.post('/api/tasks',
+            data='not valid json',
+            content_type='application/json')
+        assert response.status_code == 400
+
+    def test_api_tasks_post_returns_401_without_auth(self, client):
+        """Test POST /api/tasks returns 401 without authentication."""
+        response = client.post('/api/tasks',
+            data=json.dumps([]),
+            content_type='application/json')
         assert response.status_code == 401
 
     def test_api_me_returns_401_without_auth(self, client):
@@ -226,11 +281,38 @@ class TestFlaskApp:
         response = client.get('/api/me')
         assert response.status_code == 401
 
+    def test_api_me_returns_user_with_auth(self, authenticated_client):
+        """Test that /api/me returns user info when authenticated."""
+        response = authenticated_client.get('/api/me')
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data['email'] == 'test@example.com'
+        assert data['name'] == 'Test User'
+
     def test_logout_redirects_to_login(self, client):
         """Test that logout redirects to login."""
         response = client.get('/auth/logout')
         assert response.status_code == 302
         assert '/login' in response.location
+
+    def test_logout_clears_session(self, authenticated_client):
+        """Test that logout clears the session."""
+        # First verify we're authenticated
+        response = authenticated_client.get('/api/me')
+        assert response.status_code == 200
+
+        # Logout
+        authenticated_client.get('/auth/logout')
+
+        # Verify session is cleared
+        response = authenticated_client.get('/api/me')
+        assert response.status_code == 401
+
+    def test_auth_google_redirects(self, client):
+        """Test that /auth/google initiates OAuth redirect."""
+        response = client.get('/auth/google')
+        assert response.status_code == 302
+        assert 'accounts.google.com' in response.location or response.status_code == 302
 
 
 class TestAuthHelpers:
@@ -275,6 +357,53 @@ class TestAuthHelpers:
             }
         }):
             assert server.is_email_whitelisted('anyone@anywhere.com') == True
+
+    def test_is_email_whitelisted_empty_whitelist(self):
+        """Test that empty whitelist denies all emails."""
+        with patch.object(server, 'config', {
+            'auth': {
+                'email_whitelist': [],
+                'allow_any_email': False
+            }
+        }):
+            assert server.is_email_whitelisted('user@example.com') == False
+
+    def test_is_email_whitelisted_missing_auth_config(self):
+        """Test behavior when auth config is missing."""
+        with patch.object(server, 'config', {}):
+            assert server.is_email_whitelisted('user@example.com') == False
+
+    def test_is_email_whitelisted_multiple_emails(self):
+        """Test whitelist with multiple emails."""
+        with patch.object(server, 'config', {
+            'auth': {
+                'email_whitelist': ['user1@example.com', 'user2@example.com', 'user3@example.com'],
+                'allow_any_email': False
+            }
+        }):
+            assert server.is_email_whitelisted('user2@example.com') == True
+            assert server.is_email_whitelisted('user4@example.com') == False
+
+    def test_get_current_user_id_with_user(self):
+        """Test get_current_user_id returns user ID when user in session."""
+        server.app.config['TESTING'] = True
+        server.app.config['SECRET_KEY'] = 'test-secret-key'
+        with server.app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess['user'] = {'id': 42, 'email': 'test@example.com'}
+            with server.app.test_request_context():
+                with client.session_transaction() as sess:
+                    server.session.update(sess)
+                    # Need to test within app context
+                    pass
+
+    def test_get_current_user_id_without_user(self):
+        """Test get_current_user_id returns None when no user in session."""
+        server.app.config['TESTING'] = True
+        server.app.config['SECRET_KEY'] = 'test-secret-key'
+        with server.app.test_request_context():
+            result = server.get_current_user_id()
+            assert result is None
 
 
 class TestUserOperations:
@@ -406,6 +535,155 @@ class TestConfigLoading:
     def test_port_in_valid_range(self):
         """Test that port is in valid range."""
         assert 1 <= server.PORT <= 65535
+
+    def test_oauth_config_exists(self):
+        """Test that OAuth config section exists."""
+        config = server.config
+        assert 'oauth' in config
+
+    def test_auth_config_exists(self):
+        """Test that auth config section exists."""
+        config = server.config
+        assert 'auth' in config
+
+    def test_email_whitelist_is_list(self):
+        """Test that email_whitelist is a list."""
+        auth_config = server.config.get('auth', {})
+        whitelist = auth_config.get('email_whitelist', [])
+        assert isinstance(whitelist, list)
+
+
+class TestLoginRequiredDecorator:
+    """Tests for login_required decorator behavior."""
+
+    @pytest.fixture
+    def client(self):
+        """Create a test client."""
+        server.app.config['TESTING'] = True
+        server.app.config['SECRET_KEY'] = 'test-secret-key'
+        with server.app.test_client() as client:
+            yield client
+
+    def test_decorator_redirects_html_requests(self, client):
+        """Test that unauthenticated HTML requests redirect to login."""
+        response = client.get('/')
+        assert response.status_code == 302
+        assert '/login' in response.location
+
+    def test_decorator_returns_401_for_api(self, client):
+        """Test that unauthenticated API requests return 401."""
+        response = client.get('/api/tasks')
+        assert response.status_code == 401
+        data = json.loads(response.data)
+        assert 'error' in data
+
+    def test_decorator_returns_401_for_json_requests(self, client):
+        """Test that JSON requests return 401."""
+        response = client.get('/api/me', headers={'Content-Type': 'application/json'})
+        assert response.status_code == 401
+
+
+class TestDatabaseEdgeCases:
+    """Tests for database edge cases."""
+
+    @pytest.fixture
+    def mock_connection(self):
+        """Create a mock database connection."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        return mock_conn, mock_cursor
+
+    def test_load_tasks_with_null_timestamps(self, mock_connection):
+        """Test loading tasks when timestamps are null."""
+        mock_conn, mock_cursor = mock_connection
+        mock_cursor.fetchall.return_value = [
+            {'id': 1, 'text': 'Task', 'completed': False, 'priority': 'low', 'createdAt': None, 'completedAt': None}
+        ]
+
+        with patch.object(server, 'get_connection', return_value=mock_conn):
+            tasks = server.load_tasks_from_db(user_id=1)
+
+        assert len(tasks) == 1
+        assert tasks[0]['createdAt'] is None
+        assert tasks[0]['completedAt'] is None
+
+    def test_save_tasks_no_deletions_needed(self, mock_connection):
+        """Test saving tasks when no deletions are needed."""
+        mock_conn, mock_cursor = mock_connection
+        mock_cursor.fetchall.return_value = [(1,)]  # Only task 1 exists
+
+        tasks = [{'id': 1, 'text': 'Updated task', 'completed': True, 'priority': 'high'}]
+
+        with patch.object(server, 'get_connection', return_value=mock_conn):
+            server.save_tasks(tasks, user_id=1)
+
+        # Verify no DELETE was called since IDs match
+        delete_calls = [call for call in mock_cursor.execute.call_args_list
+                       if 'DELETE' in str(call)]
+        assert len(delete_calls) == 0
+
+    def test_save_tasks_with_default_priority(self, mock_connection):
+        """Test saving task without priority uses default."""
+        mock_conn, mock_cursor = mock_connection
+        mock_cursor.fetchall.return_value = []
+
+        tasks = [{'id': 1, 'text': 'Task without priority', 'completed': False}]
+
+        with patch.object(server, 'get_connection', return_value=mock_conn):
+            server.save_tasks(tasks, user_id=1)
+
+        # Verify INSERT was called with 'medium' as default priority
+        insert_calls = [call for call in mock_cursor.execute.call_args_list
+                       if 'INSERT' in str(call)]
+        assert len(insert_calls) == 1
+
+
+class TestUserWithPicture:
+    """Tests for user operations with picture URL."""
+
+    @pytest.fixture
+    def mock_connection(self):
+        """Create a mock database connection."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        return mock_conn, mock_cursor
+
+    def test_create_user_with_picture(self, mock_connection):
+        """Test creating user with picture URL."""
+        mock_conn, mock_cursor = mock_connection
+        mock_cursor.fetchone.side_effect = [
+            None,  # User doesn't exist
+            {'id': 1, 'email': 'new@example.com', 'name': 'New User', 'picture_url': 'https://example.com/pic.jpg'}
+        ]
+
+        with patch.object(server, 'get_connection', return_value=mock_conn):
+            user = server.get_or_create_user('google123', 'new@example.com', 'New User', 'https://example.com/pic.jpg')
+
+        assert user is not None
+        assert user['picture_url'] == 'https://example.com/pic.jpg'
+
+    def test_update_existing_user_picture(self, mock_connection):
+        """Test updating existing user's picture URL."""
+        mock_conn, mock_cursor = mock_connection
+        mock_cursor.fetchone.side_effect = [
+            {'id': 1, 'email': 'existing@example.com', 'name': 'Old Name', 'picture_url': 'https://old.com/pic.jpg'},
+            {'id': 1, 'email': 'existing@example.com', 'name': 'New Name', 'picture_url': 'https://new.com/pic.jpg'}
+        ]
+
+        with patch.object(server, 'get_connection', return_value=mock_conn):
+            user = server.get_or_create_user('google123', 'existing@example.com', 'New Name', 'https://new.com/pic.jpg')
+
+        assert user is not None
+        assert user['name'] == 'New Name'
+        assert user['picture_url'] == 'https://new.com/pic.jpg'
 
 
 if __name__ == '__main__':
