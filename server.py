@@ -179,7 +179,8 @@ def login():
 def auth_google():
     """Initiate Google OAuth flow."""
     redirect_uri = os.environ.get('OAUTH_REDIRECT_URI') or config.get('oauth', {}).get('redirect_uri') or url_for('auth_google_callback', _external=True)
-    return google.authorize_redirect(redirect_uri)
+    # Force account selection to allow switching users after logout
+    return google.authorize_redirect(redirect_uri, prompt='select_account')
 
 @app.route('/auth/google/callback')
 def auth_google_callback():
