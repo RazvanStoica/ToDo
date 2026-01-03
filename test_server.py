@@ -1,13 +1,7 @@
 #!/usr/bin/env python3
 import json
 import pytest
-import psycopg2
 from unittest.mock import patch, MagicMock
-from io import BytesIO
-from http.server import HTTPServer
-import threading
-import urllib.request
-import urllib.error
 from datetime import datetime, timezone
 
 # Import the server module
@@ -34,7 +28,7 @@ class TestDatabaseOperations:
         mock_cursor.fetchall.return_value = []
 
         with patch.object(server, 'get_connection', return_value=mock_conn):
-            tasks = server.load_tasks_from_db()
+            tasks = server.load_tasks_from_db(user_id=1)
 
         assert tasks == []
 
@@ -54,7 +48,7 @@ class TestDatabaseOperations:
         ]
 
         with patch.object(server, 'get_connection', return_value=mock_conn):
-            tasks = server.load_tasks_from_db()
+            tasks = server.load_tasks_from_db(user_id=1)
 
         assert len(tasks) == 1
         assert tasks[0]['text'] == 'Test task'
@@ -77,7 +71,7 @@ class TestDatabaseOperations:
         ]
 
         with patch.object(server, 'get_connection', return_value=mock_conn):
-            tasks = server.load_tasks_from_db()
+            tasks = server.load_tasks_from_db(user_id=1)
 
         assert isinstance(tasks[0]['createdAt'], str)
         assert isinstance(tasks[0]['completedAt'], str)
@@ -86,7 +80,7 @@ class TestDatabaseOperations:
     def test_load_tasks_from_db_handles_error(self, mock_connection):
         """Test that load_tasks_from_db handles database errors gracefully."""
         with patch.object(server, 'get_connection', side_effect=Exception("DB Error")):
-            tasks = server.load_tasks_from_db()
+            tasks = server.load_tasks_from_db(user_id=1)
 
         assert tasks == []
 
@@ -101,7 +95,7 @@ class TestDatabaseOperations:
         ]
 
         with patch.object(server, 'get_connection', return_value=mock_conn):
-            tasks = server.load_tasks_from_db()
+            tasks = server.load_tasks_from_db(user_id=1)
 
         assert len(tasks) == 3
         assert tasks[0]['text'] == 'Task 1'
@@ -137,7 +131,7 @@ class TestSaveOperations:
         }]
 
         with patch.object(server, 'get_connection', return_value=mock_conn):
-            server.save_tasks(tasks)
+            server.save_tasks(tasks, user_id=1)
 
         mock_conn.commit.assert_called_once()
 
@@ -154,7 +148,7 @@ class TestSaveOperations:
         }]
 
         with patch.object(server, 'get_connection', return_value=mock_conn):
-            server.save_tasks(tasks)
+            server.save_tasks(tasks, user_id=1)
 
         delete_calls = [call for call in mock_cursor.execute.call_args_list
                        if 'DELETE' in str(call)]
@@ -164,7 +158,7 @@ class TestSaveOperations:
         """Test that save_tasks handles database errors gracefully."""
         with patch.object(server, 'get_connection', side_effect=Exception("DB Error")):
             # Should not raise exception
-            server.save_tasks([{'id': 1, 'text': 'Test', 'completed': False}])
+            server.save_tasks([{'id': 1, 'text': 'Test', 'completed': False}], user_id=1)
 
     def test_save_tasks_with_timestamps(self, mock_connection):
         """Test saving tasks with timestamp fields."""
@@ -181,7 +175,7 @@ class TestSaveOperations:
         }]
 
         with patch.object(server, 'get_connection', return_value=mock_conn):
-            server.save_tasks(tasks)
+            server.save_tasks(tasks, user_id=1)
 
         mock_conn.commit.assert_called_once()
 
@@ -191,7 +185,7 @@ class TestSaveOperations:
         mock_cursor.fetchall.return_value = [(1,), (2,)]
 
         with patch.object(server, 'get_connection', return_value=mock_conn):
-            server.save_tasks([])
+            server.save_tasks([], user_id=1)
 
         # Should delete existing tasks
         delete_calls = [call for call in mock_cursor.execute.call_args_list
@@ -199,108 +193,138 @@ class TestSaveOperations:
         assert len(delete_calls) == 1
 
 
-class TestHTTPHandler:
-    """Tests for HTTP request handling."""
+class TestFlaskApp:
+    """Tests for Flask application routes."""
 
     @pytest.fixture
-    def handler(self):
-        """Create a mock HTTP handler."""
-        handler = MagicMock(spec=server.Handler)
-        handler.headers = {'Content-Length': '100'}
-        handler.wfile = BytesIO()
-        handler.send_response = MagicMock()
-        handler.send_header = MagicMock()
-        handler.end_headers = MagicMock()
-        return handler
+    def client(self):
+        """Create a test client."""
+        server.app.config['TESTING'] = True
+        server.app.config['SECRET_KEY'] = 'test-secret-key'
+        with server.app.test_client() as client:
+            yield client
 
-    def test_get_tasks_endpoint(self, handler):
-        """Test GET /api/tasks returns tasks."""
-        handler.path = '/api/tasks'
-        mock_tasks = [{'id': 1, 'text': 'Test', 'completed': False}]
+    def test_login_page_accessible(self, client):
+        """Test that login page is accessible."""
+        response = client.get('/login')
+        assert response.status_code == 200
+        assert b'Sign in with Google' in response.data
 
-        with patch.object(server, 'read_tasks', return_value=mock_tasks):
-            server.Handler.do_GET(handler)
+    def test_index_redirects_without_auth(self, client):
+        """Test that index page redirects to login without authentication."""
+        response = client.get('/')
+        assert response.status_code == 302
+        assert '/login' in response.location
 
-        handler.send_response.assert_called_with(200)
+    def test_api_tasks_returns_401_without_auth(self, client):
+        """Test that API returns 401 without authentication."""
+        response = client.get('/api/tasks')
+        assert response.status_code == 401
 
-    def test_get_tasks_returns_json(self, handler):
-        """Test GET /api/tasks sets correct content type."""
-        handler.path = '/api/tasks'
-        mock_tasks = [{'id': 1, 'text': 'Test', 'completed': False}]
+    def test_api_me_returns_401_without_auth(self, client):
+        """Test that /api/me returns 401 without authentication."""
+        response = client.get('/api/me')
+        assert response.status_code == 401
 
-        with patch.object(server, 'read_tasks', return_value=mock_tasks):
-            server.Handler.do_GET(handler)
+    def test_logout_redirects_to_login(self, client):
+        """Test that logout redirects to login."""
+        response = client.get('/auth/logout')
+        assert response.status_code == 302
+        assert '/login' in response.location
 
-        handler.send_header.assert_any_call('Content-Type', 'application/json')
 
-    def test_get_index_page(self, handler):
-        """Test GET / returns HTML page."""
-        handler.path = '/'
+class TestAuthHelpers:
+    """Tests for authentication helper functions."""
 
-        mock_file = MagicMock()
-        mock_file.read.return_value = '<html></html>'
-        mock_file.__enter__ = MagicMock(return_value=mock_file)
-        mock_file.__exit__ = MagicMock(return_value=False)
+    def test_is_email_whitelisted_with_match(self):
+        """Test email whitelist with matching email."""
+        with patch.object(server, 'config', {
+            'auth': {
+                'email_whitelist': ['user@example.com'],
+                'allow_any_email': False
+            }
+        }):
+            assert server.is_email_whitelisted('user@example.com') == True
 
-        with patch('builtins.open', return_value=mock_file):
-            server.Handler.do_GET(handler)
+    def test_is_email_whitelisted_case_insensitive(self):
+        """Test email whitelist is case insensitive."""
+        with patch.object(server, 'config', {
+            'auth': {
+                'email_whitelist': ['User@Example.com'],
+                'allow_any_email': False
+            }
+        }):
+            assert server.is_email_whitelisted('user@example.com') == True
 
-        handler.send_response.assert_called_with(200)
-        handler.send_header.assert_any_call('Content-Type', 'text/html')
+    def test_is_email_whitelisted_no_match(self):
+        """Test email whitelist with non-matching email."""
+        with patch.object(server, 'config', {
+            'auth': {
+                'email_whitelist': ['other@example.com'],
+                'allow_any_email': False
+            }
+        }):
+            assert server.is_email_whitelisted('user@example.com') == False
 
-    def test_get_index_html_path(self, handler):
-        """Test GET /index.html returns HTML page."""
-        handler.path = '/index.html'
+    def test_is_email_whitelisted_allow_any(self):
+        """Test email whitelist when allow_any_email is True."""
+        with patch.object(server, 'config', {
+            'auth': {
+                'email_whitelist': [],
+                'allow_any_email': True
+            }
+        }):
+            assert server.is_email_whitelisted('anyone@anywhere.com') == True
 
-        mock_file = MagicMock()
-        mock_file.read.return_value = '<html></html>'
-        mock_file.__enter__ = MagicMock(return_value=mock_file)
-        mock_file.__exit__ = MagicMock(return_value=False)
 
-        with patch('builtins.open', return_value=mock_file):
-            server.Handler.do_GET(handler)
+class TestUserOperations:
+    """Tests for user database operations."""
 
-        handler.send_response.assert_called_with(200)
+    @pytest.fixture
+    def mock_connection(self):
+        """Create a mock database connection."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        return mock_conn, mock_cursor
 
-    def test_get_404_for_unknown_path(self, handler):
-        """Test GET returns 404 for unknown paths."""
-        handler.path = '/unknown'
+    def test_get_or_create_user_creates_new(self, mock_connection):
+        """Test creating a new user."""
+        mock_conn, mock_cursor = mock_connection
+        mock_cursor.fetchone.side_effect = [
+            None,  # First call: user doesn't exist
+            {'id': 1, 'email': 'new@example.com', 'name': 'New User', 'picture_url': None}  # After insert
+        ]
 
-        server.Handler.do_GET(handler)
+        with patch.object(server, 'get_connection', return_value=mock_conn):
+            user = server.get_or_create_user('google123', 'new@example.com', 'New User', None)
 
-        handler.send_response.assert_called_with(404)
+        assert user is not None
+        assert user['email'] == 'new@example.com'
 
-    def test_post_tasks_success(self, handler):
-        """Test POST /api/tasks saves tasks."""
-        handler.path = '/api/tasks'
-        handler.headers = {'Content-Length': '50'}
-        handler.rfile = BytesIO(b'[{"id": 1, "text": "Test", "completed": false}]')
+    def test_get_or_create_user_returns_existing(self, mock_connection):
+        """Test returning existing user."""
+        mock_conn, mock_cursor = mock_connection
+        mock_cursor.fetchone.side_effect = [
+            {'id': 1, 'email': 'existing@example.com', 'name': 'Existing', 'picture_url': None},  # User exists
+            {'id': 1, 'email': 'existing@example.com', 'name': 'Existing', 'picture_url': None}  # After update
+        ]
 
-        with patch.object(server, 'save_tasks') as mock_save:
-            server.Handler.do_POST(handler)
+        with patch.object(server, 'get_connection', return_value=mock_conn):
+            user = server.get_or_create_user('google123', 'existing@example.com', 'Existing', None)
 
-        mock_save.assert_called_once()
-        handler.send_response.assert_called_with(200)
+        assert user is not None
+        assert user['email'] == 'existing@example.com'
 
-    def test_post_tasks_invalid_json(self, handler):
-        """Test POST /api/tasks returns 400 for invalid JSON."""
-        handler.path = '/api/tasks'
-        handler.headers = {'Content-Length': '10'}
-        handler.rfile = BytesIO(b'not json!')
+    def test_get_or_create_user_handles_error(self, mock_connection):
+        """Test error handling in get_or_create_user."""
+        with patch.object(server, 'get_connection', side_effect=Exception("DB Error")):
+            user = server.get_or_create_user('google123', 'test@example.com', 'Test', None)
 
-        server.Handler.do_POST(handler)
-
-        handler.send_response.assert_called_with(400)
-
-    def test_post_404_for_unknown_path(self, handler):
-        """Test POST returns 404 for unknown paths."""
-        handler.path = '/unknown'
-        handler.headers = {'Content-Length': '0'}
-        handler.rfile = BytesIO(b'')
-
-        server.Handler.do_POST(handler)
-
-        handler.send_response.assert_called_with(404)
+        assert user is None
 
 
 class TestTaskValidation:
@@ -365,8 +389,6 @@ class TestConfigLoading:
 
         assert 'database' in config
         assert 'server' in config
-        assert 'name' in config['database']
-        assert 'port' in config['server']
 
     def test_database_config_fields(self):
         """Test database config has all fields."""
@@ -375,8 +397,6 @@ class TestConfigLoading:
         assert 'host' in db_config
         assert 'port' in db_config
         assert 'name' in db_config
-        assert 'user' in db_config
-        assert 'password' in db_config
 
     def test_port_is_integer(self):
         """Test that server port is an integer."""

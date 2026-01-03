@@ -7,6 +7,19 @@
     "password": ""
   },
   "server": {
-    "port": 3000
+    "port": 3000,
+    "secret_key": "generate-a-secure-random-key"
+  },
+  "oauth": {
+    "google_client_id": "your-client-id.apps.googleusercontent.com",
+    "google_client_secret": "your-client-secret",
+    "redirect_uri": "http://localhost:3000/auth/google/callback"
+  },
+  "auth": {
+    "email_whitelist": [
+      "user1@example.com",
+      "user2@example.com"
+    ],
+    "allow_any_email": false
   }
 }

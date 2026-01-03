@@ -297,11 +297,58 @@
             font-size: 14px;
             color: #666;
         }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .user-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+
+        .user-email {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .logout-btn {
+            padding: 8px 16px;
+            font-size: 14px;
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .logout-btn:hover {
+            background-color: #545b62;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>ToDo List</h1>
+        <div class="header">
+            <h1>ToDo List</h1>
+            <div class="user-info" id="user-info" style="display: none;">
+                <img src="" alt="User avatar" class="user-avatar" id="user-avatar">
+                <span class="user-email" id="user-email"></span>
+                <button class="logout-btn" id="logout-btn">Logout</button>
+            </div>
+        </div>
 
         <div class="input-section">
             <input type="text" id="task-input" placeholder="Add task... (!h !m !l for priority)" autofocus>
@@ -336,9 +383,33 @@
         let searchQuery = '';
         const tasksPerPage = 20;
 
+        async function loadUserInfo() {
+            try {
+                const response = await fetch('/api/me');
+                if (response.status === 401) {
+                    window.location.href = '/login';
+                    return;
+                }
+                const user = await response.json();
+                if (user) {
+                    document.getElementById('user-info').style.display = 'flex';
+                    document.getElementById('user-email').textContent = user.email;
+                    if (user.picture_url) {
+                        document.getElementById('user-avatar').src = user.picture_url;
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to load user info:', err);
+            }
+        }
+
         async function loadTasks() {
             try {
                 const response = await fetch('/api/tasks');
+                if (response.status === 401) {
+                    window.location.href = '/login';
+                    return;
+                }
                 tasks = await response.json();
                 renderTasks();
             } catch (err) {
@@ -348,11 +419,15 @@
 
         async function saveTasks() {
             try {
-                await fetch('/api/tasks', {
+                const response = await fetch('/api/tasks', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(tasks)
                 });
+                if (response.status === 401) {
+                    window.location.href = '/login';
+                    return;
+                }
             } catch (err) {
                 console.error('Failed to save tasks:', err);
             }
@@ -628,7 +703,13 @@
             });
         });
 
+        // Logout button
+        document.getElementById('logout-btn').addEventListener('click', () => {
+            window.location.href = '/auth/logout';
+        });
+
         // Initial load
+        loadUserInfo();
         loadTasks();
     </script>
 </body>

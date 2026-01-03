@@ -18,6 +18,11 @@ services:
     build: .
     ports:
       - "3000:3000"
+    environment:
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - SECRET_KEY=${SECRET_KEY}
+      - OAUTH_REDIRECT_URI=${OAUTH_REDIRECT_URI:-http://localhost:3000/auth/google/callback}
     depends_on:
       db:
         condition: service_healthy
