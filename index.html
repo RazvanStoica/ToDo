@@ -337,6 +337,176 @@
         .logout-btn:hover {
             background-color: #545b62;
         }
+
+        .category-section {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .category-label {
+            font-size: 14px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .category-btn {
+            padding: 6px 14px;
+            font-size: 13px;
+            border: 2px solid #ddd;
+            background-color: white;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .category-btn:hover {
+            border-color: #6f42c1;
+        }
+
+        .category-btn.active {
+            background-color: #6f42c1;
+            border-color: #6f42c1;
+            color: white;
+        }
+
+        .category-btn.add-category {
+            border-style: dashed;
+            color: #666;
+        }
+
+        .category-btn.add-category:hover {
+            border-color: #6f42c1;
+            color: #6f42c1;
+        }
+
+        #category-select {
+            padding: 10px 15px;
+            font-size: 14px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            outline: none;
+            background-color: white;
+            cursor: pointer;
+            min-width: 120px;
+        }
+
+        #category-select:focus {
+            border-color: #6f42c1;
+        }
+
+        .task-category-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            font-size: 11px;
+            background-color: #6f42c1;
+            color: white;
+            border-radius: 10px;
+            margin-right: 8px;
+        }
+
+        .category-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .category-modal.show {
+            display: flex;
+        }
+
+        .category-modal-content {
+            background-color: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+        }
+
+        .category-modal h3 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .category-modal-input {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            outline: none;
+            margin-bottom: 15px;
+        }
+
+        .category-modal-input:focus {
+            border-color: #6f42c1;
+        }
+
+        .category-modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .category-modal-btn {
+            padding: 10px 20px;
+            font-size: 14px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .category-modal-btn.cancel {
+            background-color: #6c757d;
+            color: white;
+        }
+
+        .category-modal-btn.save {
+            background-color: #6f42c1;
+            color: white;
+        }
+
+        .category-modal-btn:hover {
+            opacity: 0.9;
+        }
+
+        .category-list {
+            margin-bottom: 15px;
+        }
+
+        .category-list-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background-color: #f5f5f5;
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }
+
+        .category-delete-btn {
+            background: none;
+            border: none;
+            color: #dc3545;
+            cursor: pointer;
+            font-size: 18px;
+            padding: 0 5px;
+        }
+
+        .category-delete-btn:hover {
+            color: #a71d2a;
+        }
     </style>
 </head>
 <body>
@@ -352,6 +522,9 @@
 
         <div class="input-section">
             <input type="text" id="task-input" placeholder="Add task... (!h !m !l for priority)" autofocus>
+            <select id="category-select">
+                <option value="">No category</option>
+            </select>
             <button id="add-btn">Add</button>
         </div>
 
@@ -365,9 +538,28 @@
             <button class="filter-btn" data-filter="completed">Completed</button>
         </div>
 
+        <div class="category-section" id="category-section">
+            <span class="category-label">Category:</span>
+            <button class="category-btn active" data-category="">All</button>
+            <button class="category-btn add-category" id="manage-categories-btn">+ Manage</button>
+        </div>
+
         <ul class="task-list" id="task-list"></ul>
 
         <div class="pagination" id="pagination"></div>
+    </div>
+
+    <!-- Category Management Modal -->
+    <div class="category-modal" id="category-modal">
+        <div class="category-modal-content">
+            <h3>Manage Categories</h3>
+            <div class="category-list" id="category-list"></div>
+            <input type="text" class="category-modal-input" id="new-category-input" placeholder="New category name...">
+            <div class="category-modal-buttons">
+                <button class="category-modal-btn cancel" id="modal-close-btn">Close</button>
+                <button class="category-modal-btn save" id="add-category-btn">Add Category</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -376,9 +568,16 @@
         const pagination = document.getElementById('pagination');
         const taskList = document.getElementById('task-list');
         const searchInput = document.getElementById('search-input');
+        const categorySelect = document.getElementById('category-select');
+        const categorySection = document.getElementById('category-section');
+        const categoryModal = document.getElementById('category-modal');
+        const categoryListEl = document.getElementById('category-list');
+        const newCategoryInput = document.getElementById('new-category-input');
 
         let tasks = [];
+        let categories = [];
         let currentFilter = 'all';
+        let currentCategory = '';
         let currentPage = 1;
         let searchQuery = '';
         const tasksPerPage = 20;
@@ -433,6 +632,87 @@
             }
         }
 
+        async function loadCategories() {
+            try {
+                const response = await fetch('/api/categories');
+                if (response.status === 401) {
+                    window.location.href = '/login';
+                    return;
+                }
+                categories = await response.json();
+                renderCategoryFilters();
+                renderCategorySelect();
+            } catch (err) {
+                console.error('Failed to load categories:', err);
+            }
+        }
+
+        async function saveCategories() {
+            try {
+                const response = await fetch('/api/categories', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(categories)
+                });
+                if (response.status === 401) {
+                    window.location.href = '/login';
+                    return;
+                }
+            } catch (err) {
+                console.error('Failed to save categories:', err);
+            }
+        }
+
+        function renderCategoryFilters() {
+            // Keep the label and manage button, rebuild category buttons
+            const label = categorySection.querySelector('.category-label');
+            const manageBtn = document.getElementById('manage-categories-btn');
+            categorySection.innerHTML = '';
+            categorySection.appendChild(label);
+
+            // Add "All" button
+            const allBtn = document.createElement('button');
+            allBtn.className = 'category-btn' + (currentCategory === '' ? ' active' : '');
+            allBtn.dataset.category = '';
+            allBtn.textContent = 'All';
+            allBtn.addEventListener('click', () => selectCategory(''));
+            categorySection.appendChild(allBtn);
+
+            // Add category buttons
+            categories.forEach(cat => {
+                const btn = document.createElement('button');
+                btn.className = 'category-btn' + (currentCategory === cat.id ? ' active' : '');
+                btn.dataset.category = cat.id;
+                btn.textContent = cat.name;
+                btn.addEventListener('click', () => selectCategory(cat.id));
+                categorySection.appendChild(btn);
+            });
+
+            categorySection.appendChild(manageBtn);
+        }
+
+        function renderCategorySelect() {
+            categorySelect.innerHTML = '<option value="">No category</option>';
+            categories.forEach(cat => {
+                const option = document.createElement('option');
+                option.value = cat.id;
+                option.textContent = cat.name;
+                categorySelect.appendChild(option);
+            });
+        }
+
+        function selectCategory(categoryId) {
+            currentCategory = categoryId;
+            currentPage = 1;
+            renderCategoryFilters();
+            renderTasks();
+        }
+
+        function getCategoryName(categoryId) {
+            const cat = categories.find(c => c.id === categoryId);
+            return cat ? cat.name : null;
+        }
+
         function renderTasks() {
             taskList.innerHTML = '';
             pagination.innerHTML = '';
@@ -451,6 +731,11 @@
                 filteredTasks = filteredTasks.filter(t =>
                     t.text.toLowerCase().includes(query)
                 );
+            }
+
+            // Apply category filter
+            if (currentCategory !== '') {
+                filteredTasks = filteredTasks.filter(t => t.categoryId === currentCategory);
             }
 
             if (filteredTasks.length === 0) {
@@ -492,12 +777,14 @@
 
                 const createdAt = task.createdAt ? formatDate(task.createdAt) : '';
                 const completedAt = task.completedAt ? formatDate(task.completedAt) : '';
+                const categoryName = getCategoryName(task.categoryId);
 
                 li.innerHTML = `
                     <input type="checkbox" class="task-checkbox" ${task.completed ? 'checked' : ''}>
                     <div class="task-content">
                         <span class="task-text">${escapeHtml(task.text)}</span>
                         <div class="task-timestamps">
+                            ${categoryName ? `<span class="task-category-badge">${escapeHtml(categoryName)}</span>` : ''}
                             ${createdAt ? `<span>Created: ${createdAt}</span>` : ''}
                             ${completedAt ? `<span>Completed: ${completedAt}</span>` : ''}
                         </div>
@@ -598,11 +885,14 @@
                 text = text.slice(prefixMatch[0].length);
             }
 
+            const selectedCategoryId = categorySelect.value ? parseInt(categorySelect.value) : null;
+
             const task = {
                 id: Date.now(),
                 text: text,
                 completed: false,
                 priority: priority,
+                categoryId: selectedCategoryId,
                 createdAt: new Date().toISOString()
             };
 
@@ -708,8 +998,91 @@
             window.location.href = '/auth/logout';
         });
 
+        // Category modal functions
+        function openCategoryModal() {
+            renderCategoryModalList();
+            categoryModal.classList.add('show');
+            newCategoryInput.focus();
+        }
+
+        function closeCategoryModal() {
+            categoryModal.classList.remove('show');
+            newCategoryInput.value = '';
+        }
+
+        function renderCategoryModalList() {
+            categoryListEl.innerHTML = '';
+            if (categories.length === 0) {
+                categoryListEl.innerHTML = '<p style="color: #666; font-size: 14px;">No categories yet.</p>';
+                return;
+            }
+            categories.forEach(cat => {
+                const item = document.createElement('div');
+                item.className = 'category-list-item';
+                item.innerHTML = `
+                    <span>${escapeHtml(cat.name)}</span>
+                    <button class="category-delete-btn" title="Delete category">&times;</button>
+                `;
+                item.querySelector('.category-delete-btn').addEventListener('click', () => {
+                    deleteCategory(cat.id);
+                });
+                categoryListEl.appendChild(item);
+            });
+        }
+
+        function addCategory() {
+            const name = newCategoryInput.value.trim();
+            if (!name) return;
+
+            const category = {
+                id: Date.now(),
+                name: name,
+                createdAt: new Date().toISOString()
+            };
+
+            categories.push(category);
+            saveCategories();
+            renderCategoryFilters();
+            renderCategorySelect();
+            renderCategoryModalList();
+            newCategoryInput.value = '';
+            newCategoryInput.focus();
+        }
+
+        function deleteCategory(id) {
+            categories = categories.filter(c => c.id !== id);
+            // Reset filter if we're filtering by deleted category
+            if (currentCategory === id) {
+                currentCategory = '';
+            }
+            saveCategories();
+            renderCategoryFilters();
+            renderCategorySelect();
+            renderCategoryModalList();
+            renderTasks();
+        }
+
+        // Category modal event listeners
+        document.getElementById('manage-categories-btn').addEventListener('click', openCategoryModal);
+        document.getElementById('modal-close-btn').addEventListener('click', closeCategoryModal);
+        document.getElementById('add-category-btn').addEventListener('click', addCategory);
+
+        newCategoryInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addCategory();
+            }
+        });
+
+        // Close modal on outside click
+        categoryModal.addEventListener('click', (e) => {
+            if (e.target === categoryModal) {
+                closeCategoryModal();
+            }
+        });
+
         // Initial load
         loadUserInfo();
+        loadCategories();
         loadTasks();
     </script>
 </body>

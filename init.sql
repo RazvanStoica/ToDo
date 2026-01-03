@@ -22,3 +22,24 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 -- Index for efficient user task lookups
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
+
+-- Categories table for organizing tasks
+CREATE TABLE IF NOT EXISTS categories (
+    id BIGINT PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Index for efficient user category lookups
+CREATE INDEX IF NOT EXISTS idx_categories_user_id ON categories(user_id);
+
+-- Add category_id to tasks (nullable - tasks can be uncategorized)
+-- Note: Run this as ALTER TABLE if tasks table already exists
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'tasks' AND column_name = 'category_id') THEN
+        ALTER TABLE tasks ADD COLUMN category_id BIGINT REFERENCES categories(id) ON DELETE SET NULL;
+    END IF;
+END $$;

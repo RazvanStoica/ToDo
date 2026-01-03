@@ -698,5 +698,188 @@ class TestUserWithPicture:
         assert user['picture_url'] == 'https://new.com/pic.jpg'
 
 
+class TestCategoryOperations:
+    """Tests for category database operations."""
+
+    @pytest.fixture
+    def mock_connection(self):
+        """Create a mock database connection."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        return mock_conn, mock_cursor
+
+    def test_load_categories_from_db_empty(self, mock_connection):
+        """Test loading categories when none exist."""
+        mock_conn, mock_cursor = mock_connection
+        mock_cursor.fetchall.return_value = []
+
+        with patch.object(server, 'get_connection', return_value=mock_conn):
+            categories = server.load_categories_from_db(user_id=1)
+
+        assert categories == []
+
+    def test_load_categories_from_db_with_data(self, mock_connection):
+        """Test loading categories with existing data."""
+        mock_conn, mock_cursor = mock_connection
+        mock_cursor.fetchall.return_value = [
+            {'id': 1, 'name': 'Work', 'createdAt': datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)},
+            {'id': 2, 'name': 'Personal', 'createdAt': datetime(2024, 1, 2, 12, 0, 0, tzinfo=timezone.utc)}
+        ]
+
+        with patch.object(server, 'get_connection', return_value=mock_conn):
+            categories = server.load_categories_from_db(user_id=1)
+
+        assert len(categories) == 2
+        assert categories[0]['name'] == 'Work'
+        assert categories[1]['name'] == 'Personal'
+
+    def test_load_categories_handles_error(self, mock_connection):
+        """Test error handling in load_categories_from_db."""
+        with patch.object(server, 'get_connection', side_effect=Exception("DB Error")):
+            categories = server.load_categories_from_db(user_id=1)
+
+        assert categories == []
+
+    def test_save_categories_insert_new(self, mock_connection):
+        """Test saving new categories."""
+        mock_conn, mock_cursor = mock_connection
+        mock_cursor.fetchall.return_value = []
+
+        categories = [{'id': 1, 'name': 'Work', 'createdAt': '2024-01-01T12:00:00Z'}]
+
+        with patch.object(server, 'get_connection', return_value=mock_conn):
+            server.save_categories(categories, user_id=1)
+
+        mock_conn.commit.assert_called_once()
+
+    def test_save_categories_delete_removed(self, mock_connection):
+        """Test deleting removed categories."""
+        mock_conn, mock_cursor = mock_connection
+        mock_cursor.fetchall.return_value = [(1,), (2,)]  # Existing IDs
+
+        categories = [{'id': 1, 'name': 'Work'}]  # Only keep id=1
+
+        with patch.object(server, 'get_connection', return_value=mock_conn):
+            server.save_categories(categories, user_id=1)
+
+        # Verify DELETE was called for removed category
+        delete_calls = [call for call in mock_cursor.execute.call_args_list
+                       if 'DELETE' in str(call)]
+        assert len(delete_calls) == 1
+
+
+class TestCategoryAPI:
+    """Tests for category API endpoints."""
+
+    @pytest.fixture
+    def authenticated_client(self):
+        """Create an authenticated test client."""
+        server.app.config['TESTING'] = True
+        server.app.config['SECRET_KEY'] = 'test-secret-key'
+        with server.app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess['user'] = {'id': 1, 'email': 'test@example.com', 'name': 'Test User', 'picture_url': None}
+            yield client
+
+    @pytest.fixture
+    def client(self):
+        """Create an unauthenticated test client."""
+        server.app.config['TESTING'] = True
+        server.app.config['SECRET_KEY'] = 'test-secret-key'
+        with server.app.test_client() as client:
+            yield client
+
+    def test_get_categories_returns_401_without_auth(self, client):
+        """Test that /api/categories requires authentication."""
+        response = client.get('/api/categories')
+        assert response.status_code == 401
+
+    def test_get_categories_with_auth(self, authenticated_client):
+        """Test getting categories when authenticated."""
+        with patch.object(server, 'load_categories_from_db', return_value=[]):
+            response = authenticated_client.get('/api/categories')
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert isinstance(data, list)
+
+    def test_post_categories_returns_401_without_auth(self, client):
+        """Test that POST /api/categories requires authentication."""
+        response = client.post('/api/categories',
+                              data=json.dumps([]),
+                              content_type='application/json')
+        assert response.status_code == 401
+
+    def test_post_categories_with_auth(self, authenticated_client):
+        """Test saving categories when authenticated."""
+        with patch.object(server, 'save_categories') as mock_save:
+            response = authenticated_client.post('/api/categories',
+                                                 data=json.dumps([{'id': 1, 'name': 'Work'}]),
+                                                 content_type='application/json')
+
+        assert response.status_code == 200
+        mock_save.assert_called_once()
+
+
+class TestTaskWithCategory:
+    """Tests for tasks with category associations."""
+
+    @pytest.fixture
+    def mock_connection(self):
+        """Create a mock database connection."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        return mock_conn, mock_cursor
+
+    def test_load_tasks_includes_category_id(self, mock_connection):
+        """Test that loaded tasks include categoryId."""
+        mock_conn, mock_cursor = mock_connection
+        mock_cursor.fetchall.return_value = [
+            {'id': 1, 'text': 'Test task', 'completed': False, 'priority': 'high',
+             'categoryId': 100, 'createdAt': None, 'completedAt': None}
+        ]
+
+        with patch.object(server, 'get_connection', return_value=mock_conn):
+            tasks = server.load_tasks_from_db(user_id=1)
+
+        assert len(tasks) == 1
+        assert tasks[0]['categoryId'] == 100
+
+    def test_save_tasks_includes_category_id(self, mock_connection):
+        """Test that saving tasks includes categoryId."""
+        mock_conn, mock_cursor = mock_connection
+        mock_cursor.fetchall.return_value = []
+
+        tasks = [{'id': 1, 'text': 'Task', 'completed': False, 'categoryId': 100}]
+
+        with patch.object(server, 'get_connection', return_value=mock_conn):
+            server.save_tasks(tasks, user_id=1)
+
+        # Verify INSERT was called with category_id
+        insert_calls = [call for call in mock_cursor.execute.call_args_list
+                       if 'INSERT' in str(call)]
+        assert len(insert_calls) == 1
+
+    def test_save_tasks_with_null_category(self, mock_connection):
+        """Test saving task without category."""
+        mock_conn, mock_cursor = mock_connection
+        mock_cursor.fetchall.return_value = []
+
+        tasks = [{'id': 1, 'text': 'Task without category', 'completed': False}]
+
+        with patch.object(server, 'get_connection', return_value=mock_conn):
+            server.save_tasks(tasks, user_id=1)
+
+        mock_conn.commit.assert_called_once()
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

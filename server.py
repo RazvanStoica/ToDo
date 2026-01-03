@@ -109,6 +109,7 @@ def load_tasks_from_db(user_id):
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("""
                     SELECT id, text, completed, priority,
+                           category_id as "categoryId",
                            created_at as "createdAt",
                            completed_at as "completedAt"
                     FROM tasks
@@ -150,23 +151,82 @@ def save_tasks(tasks, user_id):
                 for task in tasks:
                     created_at = task.get('createdAt')
                     completed_at = task.get('completedAt')
+                    category_id = task.get('categoryId')
 
                     cur.execute("""
-                        INSERT INTO tasks (id, user_id, text, completed, priority, created_at, completed_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        INSERT INTO tasks (id, user_id, text, completed, priority, category_id, created_at, completed_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (id) DO UPDATE SET
                             text = EXCLUDED.text,
                             completed = EXCLUDED.completed,
                             priority = EXCLUDED.priority,
+                            category_id = EXCLUDED.category_id,
                             created_at = EXCLUDED.created_at,
                             completed_at = EXCLUDED.completed_at
                         WHERE tasks.user_id = %s
                     """, (task['id'], user_id, task['text'], task['completed'],
-                          task.get('priority', 'medium'), created_at, completed_at, user_id))
+                          task.get('priority', 'medium'), category_id, created_at, completed_at, user_id))
 
                 conn.commit()
     except Exception as e:
         print(f"Error saving tasks: {e}")
+
+# Category database operations
+def load_categories_from_db(user_id):
+    """Load categories for a specific user from database."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT id, name, created_at as "createdAt"
+                    FROM categories
+                    WHERE user_id = %s
+                    ORDER BY name
+                """, (user_id,))
+                categories = cur.fetchall()
+                result = []
+                for cat in categories:
+                    c = dict(cat)
+                    if c['createdAt']:
+                        c['createdAt'] = c['createdAt'].isoformat()
+                    result.append(c)
+                return result
+    except Exception as e:
+        print(f"Error reading categories from database: {e}")
+        return []
+
+def save_categories(categories, user_id):
+    """Save categories for a specific user to database."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                # Get existing category IDs for this user
+                cur.execute("SELECT id FROM categories WHERE user_id = %s", (user_id,))
+                existing_ids = {row[0] for row in cur.fetchall()}
+
+                incoming_ids = {cat['id'] for cat in categories}
+
+                # Delete removed categories
+                deleted_ids = existing_ids - incoming_ids
+                if deleted_ids:
+                    cur.execute("DELETE FROM categories WHERE id = ANY(%s) AND user_id = %s",
+                               (list(deleted_ids), user_id))
+
+                # Upsert categories
+                for cat in categories:
+                    created_at = cat.get('createdAt')
+
+                    cur.execute("""
+                        INSERT INTO categories (id, user_id, name, created_at)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (id) DO UPDATE SET
+                            name = EXCLUDED.name
+                        WHERE categories.user_id = %s
+                    """, (cat['id'], user_id, cat['name'], created_at, user_id))
+
+                conn.commit()
+    except Exception as e:
+        print(f"Error saving categories: {e}")
 
 # Authentication routes
 @app.route('/login')
@@ -252,6 +312,27 @@ def post_tasks():
     try:
         tasks = request.get_json()
         save_tasks(tasks, user_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/categories', methods=['GET'])
+@login_required
+def get_categories():
+    """Get all categories for current user."""
+    user_id = get_current_user_id()
+    categories = load_categories_from_db(user_id)
+    return jsonify(categories)
+
+@app.route('/api/categories', methods=['POST'])
+@login_required
+def post_categories():
+    """Save categories for current user."""
+    user_id = get_current_user_id()
+    try:
+        categories = request.get_json()
+        save_categories(categories, user_id)
         return jsonify({'success': True})
     except Exception as e:
         print(f"Error: {e}")
