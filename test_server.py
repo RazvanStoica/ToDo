@@ -155,11 +155,16 @@ class TestSaveOperations:
                        if 'DELETE' in str(call)]
         assert len(delete_calls) == 1
 
-    def test_save_tasks_handles_error(self, mock_connection):
+    def test_save_tasks_handles_error(self, mock_connection, capsys):
         """Test that save_tasks handles database errors gracefully."""
         with patch.object(server, 'get_connection', side_effect=Exception("DB Error")):
-            # Should not raise exception
-            server.save_tasks([{'id': 1, 'text': 'Test', 'completed': False}], user_id=1)
+            # Should not raise exception, but should print error
+            result = server.save_tasks([{'id': 1, 'text': 'Test', 'completed': False}], user_id=1)
+
+        # Verify function returns None (implicit) and logs the error
+        assert result is None
+        captured = capsys.readouterr()
+        assert "Error saving tasks" in captured.out
 
     def test_save_tasks_with_timestamps(self, mock_connection):
         """Test saving tasks with timestamp fields."""
@@ -879,6 +884,175 @@ class TestTaskWithCategory:
             server.save_tasks(tasks, user_id=1)
 
         mock_conn.commit.assert_called_once()
+
+
+class TestTaskValidation:
+    """Tests for task input validation."""
+
+    def test_validate_task_valid(self):
+        """Test valid task passes validation."""
+        task = {'id': 123, 'text': 'Valid task', 'completed': False, 'priority': 'high'}
+        assert server.validate_task(task) == True
+
+    def test_validate_task_missing_id(self):
+        """Test task without ID fails validation."""
+        task = {'text': 'No ID task', 'completed': False}
+        with pytest.raises(server.ValidationError, match="Task ID must be a positive number"):
+            server.validate_task(task)
+
+    def test_validate_task_negative_id(self):
+        """Test task with negative ID fails validation."""
+        task = {'id': -1, 'text': 'Negative ID', 'completed': False}
+        with pytest.raises(server.ValidationError, match="Task ID must be a positive number"):
+            server.validate_task(task)
+
+    def test_validate_task_empty_text(self):
+        """Test task with empty text fails validation."""
+        task = {'id': 123, 'text': '   ', 'completed': False}
+        with pytest.raises(server.ValidationError, match="Task text cannot be empty"):
+            server.validate_task(task)
+
+    def test_validate_task_text_too_long(self):
+        """Test task with text exceeding max length fails validation."""
+        task = {'id': 123, 'text': 'x' * (server.MAX_TASK_TEXT_LENGTH + 1), 'completed': False}
+        with pytest.raises(server.ValidationError, match="exceeds maximum length"):
+            server.validate_task(task)
+
+    def test_validate_task_invalid_priority(self):
+        """Test task with invalid priority fails validation."""
+        task = {'id': 123, 'text': 'Task', 'completed': False, 'priority': 'urgent'}
+        with pytest.raises(server.ValidationError, match="Invalid priority"):
+            server.validate_task(task)
+
+    def test_validate_task_invalid_completed(self):
+        """Test task with non-boolean completed fails validation."""
+        task = {'id': 123, 'text': 'Task', 'completed': 'yes'}
+        with pytest.raises(server.ValidationError, match="completed must be a boolean"):
+            server.validate_task(task)
+
+    def test_validate_tasks_too_many(self):
+        """Test too many tasks fails validation."""
+        tasks = [{'id': i, 'text': f'Task {i}', 'completed': False}
+                 for i in range(server.MAX_TASKS_PER_USER + 1)]
+        with pytest.raises(server.ValidationError, match="Cannot have more than"):
+            server.validate_tasks(tasks, user_id=1)
+
+    def test_validate_tasks_duplicate_ids(self):
+        """Test duplicate task IDs fails validation."""
+        tasks = [
+            {'id': 123, 'text': 'Task 1', 'completed': False},
+            {'id': 123, 'text': 'Task 2', 'completed': False}
+        ]
+        with pytest.raises(server.ValidationError, match="Duplicate task ID"):
+            server.validate_tasks(tasks, user_id=1)
+
+    def test_validate_tasks_not_array(self):
+        """Test non-array tasks fails validation."""
+        with pytest.raises(server.ValidationError, match="Tasks must be an array"):
+            server.validate_tasks({'id': 1, 'text': 'Task'}, user_id=1)
+
+
+class TestCategoryValidation:
+    """Tests for category input validation."""
+
+    def test_validate_category_valid(self):
+        """Test valid category passes validation."""
+        category = {'id': 123, 'name': 'Work'}
+        assert server.validate_category(category) == True
+
+    def test_validate_category_missing_id(self):
+        """Test category without ID fails validation."""
+        category = {'name': 'Work'}
+        with pytest.raises(server.ValidationError, match="Category ID must be a positive number"):
+            server.validate_category(category)
+
+    def test_validate_category_empty_name(self):
+        """Test category with empty name fails validation."""
+        category = {'id': 123, 'name': '   '}
+        with pytest.raises(server.ValidationError, match="Category name cannot be empty"):
+            server.validate_category(category)
+
+    def test_validate_category_name_too_long(self):
+        """Test category with name exceeding max length fails validation."""
+        category = {'id': 123, 'name': 'x' * (server.MAX_CATEGORY_NAME_LENGTH + 1)}
+        with pytest.raises(server.ValidationError, match="exceeds maximum length"):
+            server.validate_category(category)
+
+    def test_validate_categories_too_many(self):
+        """Test too many categories fails validation."""
+        categories = [{'id': i, 'name': f'Category {i}'}
+                      for i in range(server.MAX_CATEGORIES_PER_USER + 1)]
+        with pytest.raises(server.ValidationError, match="Cannot have more than"):
+            server.validate_categories(categories, user_id=1)
+
+    def test_validate_categories_duplicate_ids(self):
+        """Test duplicate category IDs fails validation."""
+        categories = [
+            {'id': 123, 'name': 'Work'},
+            {'id': 123, 'name': 'Personal'}
+        ]
+        with pytest.raises(server.ValidationError, match="Duplicate category ID"):
+            server.validate_categories(categories, user_id=1)
+
+    def test_validate_categories_duplicate_names(self):
+        """Test duplicate category names fails validation."""
+        categories = [
+            {'id': 1, 'name': 'Work'},
+            {'id': 2, 'name': 'work'}  # Same name, different case
+        ]
+        with pytest.raises(server.ValidationError, match="Duplicate category name"):
+            server.validate_categories(categories, user_id=1)
+
+
+class TestValidationAPI:
+    """Tests for validation in API endpoints."""
+
+    @pytest.fixture
+    def authenticated_client(self):
+        """Create an authenticated test client."""
+        server.app.config['TESTING'] = True
+        server.app.config['SECRET_KEY'] = 'test-secret-key'
+        with server.app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess['user'] = {'id': 1, 'email': 'test@example.com', 'name': 'Test User', 'picture_url': None}
+            yield client
+
+    def test_post_tasks_invalid_json(self, authenticated_client):
+        """Test posting invalid JSON returns 400."""
+        response = authenticated_client.post('/api/tasks',
+                                             data='not json',
+                                             content_type='application/json')
+        assert response.status_code == 400
+
+    def test_post_tasks_validation_error(self, authenticated_client):
+        """Test posting invalid task returns 400 with error message."""
+        tasks = [{'id': 1, 'text': '', 'completed': False}]  # Empty text
+        response = authenticated_client.post('/api/tasks',
+                                             data=json.dumps(tasks),
+                                             content_type='application/json')
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert 'error' in data
+        assert 'empty' in data['error'].lower()
+
+    def test_post_categories_validation_error(self, authenticated_client):
+        """Test posting invalid category returns 400 with error message."""
+        categories = [{'id': 1, 'name': ''}]  # Empty name
+        response = authenticated_client.post('/api/categories',
+                                             data=json.dumps(categories),
+                                             content_type='application/json')
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert 'error' in data
+
+    def test_post_tasks_valid(self, authenticated_client):
+        """Test posting valid tasks succeeds."""
+        tasks = [{'id': 1, 'text': 'Valid task', 'completed': False, 'priority': 'medium'}]
+        with patch.object(server, 'save_tasks'):
+            response = authenticated_client.post('/api/tasks',
+                                                 data=json.dumps(tasks),
+                                                 content_type='application/json')
+        assert response.status_code == 200
 
 
 if __name__ == '__main__':

@@ -9,6 +9,117 @@ from psycopg2.extras import RealDictCursor
 from flask import Flask, request, jsonify, redirect, url_for, session, send_file, render_template
 from authlib.integrations.flask_client import OAuth
 
+# Validation limits
+MAX_TASK_TEXT_LENGTH = 1000
+MAX_CATEGORY_NAME_LENGTH = 100
+MAX_TASKS_PER_USER = 10000
+MAX_CATEGORIES_PER_USER = 100
+MAX_PAYLOAD_SIZE = 1024 * 1024  # 1MB
+VALID_PRIORITIES = {'high', 'medium', 'low'}
+
+class ValidationError(Exception):
+    """Custom exception for validation errors."""
+    pass
+
+def validate_task(task):
+    """Validate a single task object."""
+    if not isinstance(task, dict):
+        raise ValidationError("Task must be an object")
+
+    # Validate ID
+    task_id = task.get('id')
+    if not isinstance(task_id, (int, float)) or task_id < 0:
+        raise ValidationError("Task ID must be a positive number")
+
+    # Validate text
+    text = task.get('text')
+    if not isinstance(text, str):
+        raise ValidationError("Task text must be a string")
+    if not text.strip():
+        raise ValidationError("Task text cannot be empty")
+    if len(text) > MAX_TASK_TEXT_LENGTH:
+        raise ValidationError(f"Task text exceeds maximum length of {MAX_TASK_TEXT_LENGTH}")
+
+    # Validate completed
+    if 'completed' in task and not isinstance(task['completed'], bool):
+        raise ValidationError("Task completed must be a boolean")
+
+    # Validate priority
+    priority = task.get('priority', 'medium')
+    if priority not in VALID_PRIORITIES:
+        raise ValidationError(f"Invalid priority. Must be one of: {', '.join(VALID_PRIORITIES)}")
+
+    # Validate categoryId (optional)
+    category_id = task.get('categoryId')
+    if category_id is not None and not isinstance(category_id, (int, float)):
+        raise ValidationError("Category ID must be a number or null")
+
+    return True
+
+def validate_tasks(tasks, user_id):
+    """Validate a list of tasks."""
+    if not isinstance(tasks, list):
+        raise ValidationError("Tasks must be an array")
+
+    if len(tasks) > MAX_TASKS_PER_USER:
+        raise ValidationError(f"Cannot have more than {MAX_TASKS_PER_USER} tasks")
+
+    seen_ids = set()
+    for task in tasks:
+        validate_task(task)
+        task_id = task.get('id')
+        if task_id in seen_ids:
+            raise ValidationError(f"Duplicate task ID: {task_id}")
+        seen_ids.add(task_id)
+
+    return True
+
+def validate_category(category):
+    """Validate a single category object."""
+    if not isinstance(category, dict):
+        raise ValidationError("Category must be an object")
+
+    # Validate ID
+    cat_id = category.get('id')
+    if not isinstance(cat_id, (int, float)) or cat_id < 0:
+        raise ValidationError("Category ID must be a positive number")
+
+    # Validate name
+    name = category.get('name')
+    if not isinstance(name, str):
+        raise ValidationError("Category name must be a string")
+    if not name.strip():
+        raise ValidationError("Category name cannot be empty")
+    if len(name) > MAX_CATEGORY_NAME_LENGTH:
+        raise ValidationError(f"Category name exceeds maximum length of {MAX_CATEGORY_NAME_LENGTH}")
+
+    return True
+
+def validate_categories(categories, user_id):
+    """Validate a list of categories."""
+    if not isinstance(categories, list):
+        raise ValidationError("Categories must be an array")
+
+    if len(categories) > MAX_CATEGORIES_PER_USER:
+        raise ValidationError(f"Cannot have more than {MAX_CATEGORIES_PER_USER} categories")
+
+    seen_ids = set()
+    seen_names = set()
+    for category in categories:
+        validate_category(category)
+        cat_id = category.get('id')
+        name = category.get('name').lower().strip()
+
+        if cat_id in seen_ids:
+            raise ValidationError(f"Duplicate category ID: {cat_id}")
+        seen_ids.add(cat_id)
+
+        if name in seen_names:
+            raise ValidationError(f"Duplicate category name: {category.get('name')}")
+        seen_names.add(name)
+
+    return True
+
 # Configuration
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 
@@ -22,6 +133,7 @@ PORT = config['server']['port']
 # Flask app setup
 app = Flask(__name__, template_folder='templates')
 app.secret_key = os.environ.get('SECRET_KEY') or config['server'].get('secret_key') or secrets.token_hex(32)
+app.config['MAX_CONTENT_LENGTH'] = MAX_PAYLOAD_SIZE  # Limit request size
 
 # OAuth setup
 oauth = OAuth(app)
@@ -310,12 +422,19 @@ def post_tasks():
     """Save tasks for current user."""
     user_id = get_current_user_id()
     try:
-        tasks = request.get_json()
+        tasks = request.get_json(silent=True)
+        if tasks is None:
+            return jsonify({'error': 'Invalid JSON payload'}), 400
+
+        # Validate tasks before saving
+        validate_tasks(tasks, user_id)
         save_tasks(tasks, user_id)
         return jsonify({'success': True})
-    except Exception as e:
-        print(f"Error: {e}")
+    except ValidationError as e:
         return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error saving tasks: {e}")
+        return jsonify({'error': 'Failed to save tasks'}), 500
 
 @app.route('/api/categories', methods=['GET'])
 @login_required
@@ -331,12 +450,19 @@ def post_categories():
     """Save categories for current user."""
     user_id = get_current_user_id()
     try:
-        categories = request.get_json()
+        categories = request.get_json(silent=True)
+        if categories is None:
+            return jsonify({'error': 'Invalid JSON payload'}), 400
+
+        # Validate categories before saving
+        validate_categories(categories, user_id)
         save_categories(categories, user_id)
         return jsonify({'success': True})
-    except Exception as e:
-        print(f"Error: {e}")
+    except ValidationError as e:
         return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error saving categories: {e}")
+        return jsonify({'error': 'Failed to save categories'}), 500
 
 if __name__ == '__main__':
     print(f'ToDo app running at http://localhost:{PORT}')
