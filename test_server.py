@@ -570,6 +570,27 @@ class TestConfigLoading:
         assert isinstance(whitelist, list)
 
 
+class TestSecureSessionConfig:
+    """Tests for secure session cookie configuration."""
+
+    def test_session_cookie_httponly(self):
+        """Test that session cookie has HttpOnly flag."""
+        assert server.app.config['SESSION_COOKIE_HTTPONLY'] == True
+
+    def test_session_cookie_samesite(self):
+        """Test that session cookie has SameSite=Lax."""
+        assert server.app.config['SESSION_COOKIE_SAMESITE'] == 'Lax'
+
+    def test_session_lifetime_configured(self):
+        """Test that permanent session lifetime is configured."""
+        from datetime import timedelta
+        assert server.app.config['PERMANENT_SESSION_LIFETIME'] == timedelta(days=7)
+
+    def test_max_content_length_configured(self):
+        """Test that max content length is configured."""
+        assert server.app.config['MAX_CONTENT_LENGTH'] == server.MAX_PAYLOAD_SIZE
+
+
 class TestLoginRequiredDecorator:
     """Tests for login_required decorator behavior."""
 

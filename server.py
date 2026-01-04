@@ -2,6 +2,7 @@
 import json
 import os
 import secrets
+from datetime import timedelta
 from functools import wraps
 
 import psycopg2
@@ -134,6 +135,12 @@ PORT = config['server']['port']
 app = Flask(__name__, template_folder='templates')
 app.secret_key = os.environ.get('SECRET_KEY') or config['server'].get('secret_key') or secrets.token_hex(32)
 app.config['MAX_CONTENT_LENGTH'] = MAX_PAYLOAD_SIZE  # Limit request size
+
+# Secure session cookie configuration
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') == 'production'  # HTTPS only in production
+app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection (Lax allows OAuth redirects)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)  # Session expires after 7 days
 
 # OAuth setup
 oauth = OAuth(app)
