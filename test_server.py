@@ -591,6 +591,57 @@ class TestSecureSessionConfig:
         assert server.app.config['MAX_CONTENT_LENGTH'] == server.MAX_PAYLOAD_SIZE
 
 
+class TestSecurityHeaders:
+    """Tests for security headers."""
+
+    @pytest.fixture
+    def client(self):
+        """Create a test client."""
+        server.app.config['TESTING'] = True
+        server.app.config['SECRET_KEY'] = 'test-secret-key'
+        with server.app.test_client() as client:
+            yield client
+
+    def test_x_frame_options_header(self, client):
+        """Test X-Frame-Options header is set to DENY."""
+        response = client.get('/login')
+        assert response.headers.get('X-Frame-Options') == 'DENY'
+
+    def test_x_content_type_options_header(self, client):
+        """Test X-Content-Type-Options header is set."""
+        response = client.get('/login')
+        assert response.headers.get('X-Content-Type-Options') == 'nosniff'
+
+    def test_x_xss_protection_header(self, client):
+        """Test X-XSS-Protection header is set."""
+        response = client.get('/login')
+        assert response.headers.get('X-XSS-Protection') == '1; mode=block'
+
+    def test_referrer_policy_header(self, client):
+        """Test Referrer-Policy header is set."""
+        response = client.get('/login')
+        assert response.headers.get('Referrer-Policy') == 'strict-origin-when-cross-origin'
+
+    def test_permissions_policy_header(self, client):
+        """Test Permissions-Policy header is set."""
+        response = client.get('/login')
+        assert 'geolocation=()' in response.headers.get('Permissions-Policy', '')
+
+    def test_content_security_policy_header(self, client):
+        """Test Content-Security-Policy header is set."""
+        response = client.get('/login')
+        csp = response.headers.get('Content-Security-Policy', '')
+        assert "default-src 'self'" in csp
+        assert "frame-ancestors 'none'" in csp
+
+    def test_hsts_not_set_in_development(self, client):
+        """Test HSTS header is not set in development."""
+        with patch.dict('os.environ', {'FLASK_ENV': 'development'}):
+            response = client.get('/login')
+        # HSTS should not be set in development
+        assert 'Strict-Transport-Security' not in response.headers
+
+
 class TestLoginRequiredDecorator:
     """Tests for login_required decorator behavior."""
 
