@@ -591,6 +591,19 @@ class TestSecureSessionConfig:
         assert server.app.config['MAX_CONTENT_LENGTH'] == server.MAX_PAYLOAD_SIZE
 
 
+class TestRateLimiting:
+    """Tests for rate limiting configuration."""
+
+    def test_limiter_is_configured(self):
+        """Test that rate limiter is configured."""
+        assert server.limiter is not None
+
+    def test_default_limits_set(self):
+        """Test that default limits are configured."""
+        # Limiter should have default limits configured
+        assert hasattr(server.limiter, '_default_limits_per_method') or hasattr(server.limiter, 'default_limits')
+
+
 class TestSecurityHeaders:
     """Tests for security headers."""
 

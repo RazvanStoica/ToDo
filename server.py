@@ -8,6 +8,8 @@ from functools import wraps
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from flask import Flask, request, jsonify, redirect, url_for, session, send_file, render_template
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from authlib.integrations.flask_client import OAuth
 
 # Validation limits
@@ -135,6 +137,21 @@ PORT = config['server']['port']
 app = Flask(__name__, template_folder='templates')
 app.secret_key = os.environ.get('SECRET_KEY') or config['server'].get('secret_key') or secrets.token_hex(32)
 app.config['MAX_CONTENT_LENGTH'] = MAX_PAYLOAD_SIZE  # Limit request size
+
+# Rate limiting configuration
+def get_user_id_or_ip():
+    """Get user ID for authenticated users, IP for anonymous."""
+    user = session.get('user')
+    if user:
+        return f"user:{user['id']}"
+    return get_remote_address()
+
+limiter = Limiter(
+    app=app,
+    key_func=get_user_id_or_ip,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://",
+)
 
 # Secure session cookie configuration
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') == 'production'  # HTTPS only in production
@@ -379,12 +396,14 @@ def save_categories(categories, user_id):
 
 # Authentication routes
 @app.route('/login')
+@limiter.limit("30 per minute")
 def login():
     """Show login page."""
     error = request.args.get('error')
     return render_template('login.html', error=error)
 
 @app.route('/auth/google')
+@limiter.limit("10 per minute")  # Stricter limit for OAuth initiation
 def auth_google():
     """Initiate Google OAuth flow."""
     redirect_uri = os.environ.get('OAUTH_REDIRECT_URI') or config.get('oauth', {}).get('redirect_uri') or url_for('auth_google_callback', _external=True)
@@ -392,6 +411,7 @@ def auth_google():
     return google.authorize_redirect(redirect_uri, prompt='select_account')
 
 @app.route('/auth/google/callback')
+@limiter.limit("10 per minute")  # Stricter limit for OAuth callback
 def auth_google_callback():
     """Handle Google OAuth callback."""
     try:
@@ -432,6 +452,7 @@ def logout():
     return redirect(url_for('login'))
 
 @app.route('/api/me')
+@limiter.limit("60 per minute")
 @login_required
 def get_current_user():
     """Get current user info."""
@@ -439,6 +460,7 @@ def get_current_user():
 
 # Application routes
 @app.route('/')
+@limiter.limit("60 per minute")
 @login_required
 def index():
     """Serve the main application page."""
@@ -446,6 +468,7 @@ def index():
     return send_file(html_path)
 
 @app.route('/api/tasks', methods=['GET'])
+@limiter.limit("120 per minute")  # Higher limit for GET
 @login_required
 def get_tasks():
     """Get all tasks for current user."""
@@ -454,6 +477,7 @@ def get_tasks():
     return jsonify(tasks)
 
 @app.route('/api/tasks', methods=['POST'])
+@limiter.limit("30 per minute")  # Stricter limit for writes
 @login_required
 def post_tasks():
     """Save tasks for current user."""
@@ -474,6 +498,7 @@ def post_tasks():
         return jsonify({'error': 'Failed to save tasks'}), 500
 
 @app.route('/api/categories', methods=['GET'])
+@limiter.limit("120 per minute")  # Higher limit for GET
 @login_required
 def get_categories():
     """Get all categories for current user."""
@@ -482,6 +507,7 @@ def get_categories():
     return jsonify(categories)
 
 @app.route('/api/categories', methods=['POST'])
+@limiter.limit("30 per minute")  # Stricter limit for writes
 @login_required
 def post_categories():
     """Save categories for current user."""
