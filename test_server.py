@@ -2,7 +2,7 @@
 import json
 import pytest
 from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from flask import redirect
 
 # Import the server module
@@ -1037,6 +1037,110 @@ class TestTaskValidation:
             server.validate_tasks({'id': 1, 'text': 'Task'}, user_id=1)
 
 
+class TestTimestampValidation:
+    """Tests for timestamp validation."""
+
+    def test_validate_timestamp_valid_iso_format(self):
+        """Test valid ISO 8601 timestamp passes validation."""
+        assert server.validate_timestamp('2025-01-01T12:00:00Z', 'createdAt') == True
+
+    def test_validate_timestamp_valid_with_timezone(self):
+        """Test valid timestamp with timezone passes validation."""
+        assert server.validate_timestamp('2025-01-01T12:00:00+05:00', 'createdAt') == True
+
+    def test_validate_timestamp_valid_without_timezone(self):
+        """Test valid timestamp without timezone passes validation."""
+        assert server.validate_timestamp('2025-01-01T12:00:00', 'createdAt') == True
+
+    def test_validate_timestamp_null_is_valid(self):
+        """Test null timestamp is valid."""
+        assert server.validate_timestamp(None, 'createdAt') == True
+
+    def test_validate_timestamp_invalid_format(self):
+        """Test invalid timestamp format fails validation."""
+        with pytest.raises(server.ValidationError, match="must be a valid ISO 8601 timestamp"):
+            server.validate_timestamp('not-a-date', 'createdAt')
+
+    def test_validate_timestamp_partial_date(self):
+        """Test partial date fails validation."""
+        with pytest.raises(server.ValidationError, match="must be a valid ISO 8601 timestamp"):
+            server.validate_timestamp('2025-01', 'createdAt')
+
+    def test_validate_timestamp_non_string_type(self):
+        """Test non-string timestamp fails validation."""
+        with pytest.raises(server.ValidationError, match="must be a string or null"):
+            server.validate_timestamp(1704067200, 'createdAt')  # Unix timestamp
+
+    def test_validate_timestamp_future_date_fails(self):
+        """Test timestamp too far in the future fails validation."""
+        # Create a timestamp 2 hours in the future (beyond the 1 hour limit)
+        future = datetime.now(timezone.utc) + timedelta(hours=2)
+        future_str = future.isoformat()
+        with pytest.raises(server.ValidationError, match="cannot be in the future"):
+            server.validate_timestamp(future_str, 'createdAt')
+
+    def test_validate_timestamp_near_future_passes(self):
+        """Test timestamp slightly in the future passes (within clock skew)."""
+        # Create a timestamp 30 minutes in the future (within 1 hour limit)
+        near_future = datetime.now(timezone.utc) + timedelta(minutes=30)
+        near_future_str = near_future.isoformat()
+        assert server.validate_timestamp(near_future_str, 'createdAt') == True
+
+    def test_validate_task_with_valid_timestamps(self):
+        """Test task with valid timestamps passes validation."""
+        task = {
+            'id': 123,
+            'text': 'Valid task',
+            'completed': True,
+            'priority': 'high',
+            'createdAt': '2025-01-01T12:00:00Z',
+            'completedAt': '2025-01-01T13:00:00Z'
+        }
+        assert server.validate_task(task) == True
+
+    def test_validate_task_with_invalid_created_at(self):
+        """Test task with invalid createdAt fails validation."""
+        task = {
+            'id': 123,
+            'text': 'Task',
+            'completed': False,
+            'createdAt': 'invalid-date'
+        }
+        with pytest.raises(server.ValidationError, match="createdAt must be a valid ISO 8601 timestamp"):
+            server.validate_task(task)
+
+    def test_validate_task_with_future_completed_at(self):
+        """Test task with future completedAt fails validation."""
+        future = datetime.now(timezone.utc) + timedelta(hours=2)
+        task = {
+            'id': 123,
+            'text': 'Task',
+            'completed': True,
+            'completedAt': future.isoformat()
+        }
+        with pytest.raises(server.ValidationError, match="completedAt cannot be in the future"):
+            server.validate_task(task)
+
+    def test_validate_category_with_valid_timestamp(self):
+        """Test category with valid timestamp passes validation."""
+        category = {
+            'id': 123,
+            'name': 'Work',
+            'createdAt': '2025-01-01T12:00:00Z'
+        }
+        assert server.validate_category(category) == True
+
+    def test_validate_category_with_invalid_timestamp(self):
+        """Test category with invalid timestamp fails validation."""
+        category = {
+            'id': 123,
+            'name': 'Work',
+            'createdAt': 'bad-timestamp'
+        }
+        with pytest.raises(server.ValidationError, match="createdAt must be a valid ISO 8601 timestamp"):
+            server.validate_category(category)
+
+
 class TestCategoryValidation:
     """Tests for category input validation."""
 
@@ -1087,6 +1191,140 @@ class TestCategoryValidation:
         ]
         with pytest.raises(server.ValidationError, match="Duplicate category name"):
             server.validate_categories(categories, user_id=1)
+
+
+class TestCategoryOwnershipValidation:
+    """Tests for category ownership validation."""
+
+    def test_validate_tasks_with_valid_category(self):
+        """Test task with valid category passes validation."""
+        tasks = [{'id': 1, 'text': 'Task', 'completed': False, 'categoryId': 100}]
+        valid_category_ids = {100, 200, 300}
+        assert server.validate_tasks(tasks, user_id=1, valid_category_ids=valid_category_ids) == True
+
+    def test_validate_tasks_with_invalid_category(self):
+        """Test task with invalid category fails validation."""
+        tasks = [{'id': 1, 'text': 'Task', 'completed': False, 'categoryId': 999}]
+        valid_category_ids = {100, 200, 300}
+        with pytest.raises(server.ValidationError, match="Invalid category"):
+            server.validate_tasks(tasks, user_id=1, valid_category_ids=valid_category_ids)
+
+    def test_validate_tasks_with_null_category(self):
+        """Test task with null categoryId passes validation."""
+        tasks = [{'id': 1, 'text': 'Task', 'completed': False, 'categoryId': None}]
+        valid_category_ids = {100, 200, 300}
+        assert server.validate_tasks(tasks, user_id=1, valid_category_ids=valid_category_ids) == True
+
+    def test_validate_tasks_without_category_id(self):
+        """Test task without categoryId field passes validation."""
+        tasks = [{'id': 1, 'text': 'Task', 'completed': False}]
+        valid_category_ids = {100, 200, 300}
+        assert server.validate_tasks(tasks, user_id=1, valid_category_ids=valid_category_ids) == True
+
+    def test_validate_tasks_without_valid_category_ids_skips_check(self):
+        """Test that ownership check is skipped when valid_category_ids is None."""
+        tasks = [{'id': 1, 'text': 'Task', 'completed': False, 'categoryId': 999}]
+        # When valid_category_ids is None, ownership check should be skipped
+        assert server.validate_tasks(tasks, user_id=1, valid_category_ids=None) == True
+
+    def test_validate_tasks_with_empty_valid_categories(self):
+        """Test task with category fails when user has no categories."""
+        tasks = [{'id': 1, 'text': 'Task', 'completed': False, 'categoryId': 100}]
+        valid_category_ids = set()  # User has no categories
+        with pytest.raises(server.ValidationError, match="Invalid category"):
+            server.validate_tasks(tasks, user_id=1, valid_category_ids=valid_category_ids)
+
+    def test_validate_tasks_multiple_tasks_one_invalid_category(self):
+        """Test that validation fails if any task has invalid category."""
+        tasks = [
+            {'id': 1, 'text': 'Task 1', 'completed': False, 'categoryId': 100},
+            {'id': 2, 'text': 'Task 2', 'completed': False, 'categoryId': 999},  # Invalid
+            {'id': 3, 'text': 'Task 3', 'completed': False, 'categoryId': 200},
+        ]
+        valid_category_ids = {100, 200, 300}
+        with pytest.raises(server.ValidationError, match="Invalid category"):
+            server.validate_tasks(tasks, user_id=1, valid_category_ids=valid_category_ids)
+
+
+class TestGetUserCategoryIds:
+    """Tests for get_user_category_ids function."""
+
+    @pytest.fixture
+    def mock_connection(self):
+        """Create a mock database connection."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        return mock_conn, mock_cursor
+
+    def test_get_user_category_ids_with_categories(self, mock_connection):
+        """Test getting category IDs when user has categories."""
+        mock_conn, mock_cursor = mock_connection
+        mock_cursor.fetchall.return_value = [(100,), (200,), (300,)]
+
+        with patch.object(server, 'get_connection', return_value=mock_conn):
+            result = server.get_user_category_ids(user_id=1)
+
+        assert result == {100, 200, 300}
+
+    def test_get_user_category_ids_no_categories(self, mock_connection):
+        """Test getting category IDs when user has no categories."""
+        mock_conn, mock_cursor = mock_connection
+        mock_cursor.fetchall.return_value = []
+
+        with patch.object(server, 'get_connection', return_value=mock_conn):
+            result = server.get_user_category_ids(user_id=1)
+
+        assert result == set()
+
+    def test_get_user_category_ids_handles_error(self):
+        """Test that get_user_category_ids handles database errors gracefully."""
+        with patch.object(server, 'get_connection', side_effect=Exception("DB Error")):
+            result = server.get_user_category_ids(user_id=1)
+
+        assert result == set()
+
+
+class TestCategoryOwnershipAPI:
+    """Tests for category ownership validation in API endpoints."""
+
+    @pytest.fixture
+    def authenticated_client(self):
+        """Create an authenticated test client."""
+        server.app.config['TESTING'] = True
+        server.app.config['SECRET_KEY'] = 'test-secret-key'
+        with server.app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess['user'] = {'id': 1, 'email': 'test@example.com', 'name': 'Test User', 'picture_url': None}
+            yield client
+
+    def test_post_tasks_with_invalid_category_returns_400(self, authenticated_client):
+        """Test posting task with invalid category returns 400."""
+        tasks = [{'id': 1, 'text': 'Task', 'completed': False, 'categoryId': 999}]
+
+        with patch.object(server, 'get_user_category_ids', return_value={100, 200}):
+            response = authenticated_client.post('/api/tasks',
+                                                 data=json.dumps(tasks),
+                                                 content_type='application/json')
+
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert 'Invalid category' in data['error']
+
+    def test_post_tasks_with_valid_category_succeeds(self, authenticated_client):
+        """Test posting task with valid category succeeds."""
+        tasks = [{'id': 1, 'text': 'Task', 'completed': False, 'categoryId': 100}]
+
+        with patch.object(server, 'get_user_category_ids', return_value={100, 200}):
+            with patch.object(server, 'save_tasks'):
+                response = authenticated_client.post('/api/tasks',
+                                                     data=json.dumps(tasks),
+                                                     content_type='application/json')
+
+        assert response.status_code == 200
 
 
 class TestValidationAPI:

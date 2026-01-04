@@ -2,7 +2,7 @@
 import json
 import os
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 import psycopg2
@@ -18,11 +18,58 @@ MAX_CATEGORY_NAME_LENGTH = 100
 MAX_TASKS_PER_USER = 10000
 MAX_CATEGORIES_PER_USER = 100
 MAX_PAYLOAD_SIZE = 1024 * 1024  # 1MB
+MAX_FUTURE_SECONDS = 3600  # Allow 1 hour clock skew
 VALID_PRIORITIES = {'high', 'medium', 'low'}
 
 class ValidationError(Exception):
     """Custom exception for validation errors."""
     pass
+
+
+def validate_timestamp(value, field_name):
+    """Validate an ISO 8601 timestamp string.
+
+    Args:
+        value: The timestamp value to validate (can be None or string)
+        field_name: Name of the field for error messages
+
+    Returns:
+        True if valid
+
+    Raises:
+        ValidationError: If the timestamp is invalid
+    """
+    if value is None:
+        return True
+
+    if not isinstance(value, str):
+        raise ValidationError(f"{field_name} must be a string or null")
+
+    # Try to parse ISO 8601 format
+    try:
+        # Handle various ISO 8601 formats
+        # Remove trailing Z and replace with +00:00 for fromisoformat
+        ts_str = value
+        if ts_str.endswith('Z'):
+            ts_str = ts_str[:-1] + '+00:00'
+
+        parsed = datetime.fromisoformat(ts_str)
+
+        # Ensure timezone-aware for comparison
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+
+        # Check if timestamp is too far in the future
+        now = datetime.now(timezone.utc)
+        max_allowed = now + timedelta(seconds=MAX_FUTURE_SECONDS)
+
+        if parsed > max_allowed:
+            raise ValidationError(f"{field_name} cannot be in the future")
+
+    except ValueError as e:
+        raise ValidationError(f"{field_name} must be a valid ISO 8601 timestamp")
+
+    return True
 
 def validate_task(task):
     """Validate a single task object."""
@@ -57,10 +104,21 @@ def validate_task(task):
     if category_id is not None and not isinstance(category_id, (int, float)):
         raise ValidationError("Category ID must be a number or null")
 
+    # Validate timestamps
+    validate_timestamp(task.get('createdAt'), 'createdAt')
+    validate_timestamp(task.get('completedAt'), 'completedAt')
+
     return True
 
-def validate_tasks(tasks, user_id):
-    """Validate a list of tasks."""
+def validate_tasks(tasks, user_id, valid_category_ids=None):
+    """Validate a list of tasks.
+
+    Args:
+        tasks: List of task objects to validate
+        user_id: The user ID (for context)
+        valid_category_ids: Optional set of category IDs the user owns.
+                           If provided, validates that all task categoryIds are in this set.
+    """
     if not isinstance(tasks, list):
         raise ValidationError("Tasks must be an array")
 
@@ -74,6 +132,12 @@ def validate_tasks(tasks, user_id):
         if task_id in seen_ids:
             raise ValidationError(f"Duplicate task ID: {task_id}")
         seen_ids.add(task_id)
+
+        # Validate category ownership if valid_category_ids is provided
+        category_id = task.get('categoryId')
+        if valid_category_ids is not None and category_id is not None:
+            if category_id not in valid_category_ids:
+                raise ValidationError(f"Invalid category: category does not exist or does not belong to you")
 
     return True
 
@@ -95,6 +159,9 @@ def validate_category(category):
         raise ValidationError("Category name cannot be empty")
     if len(name) > MAX_CATEGORY_NAME_LENGTH:
         raise ValidationError(f"Category name exceeds maximum length of {MAX_CATEGORY_NAME_LENGTH}")
+
+    # Validate timestamp
+    validate_timestamp(category.get('createdAt'), 'createdAt')
 
     return True
 
@@ -338,6 +405,18 @@ def save_tasks(tasks, user_id):
         print(f"Error saving tasks: {e}")
 
 # Category database operations
+def get_user_category_ids(user_id):
+    """Get the set of category IDs belonging to a user."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM categories WHERE user_id = %s", (user_id,))
+                return {row[0] for row in cur.fetchall()}
+    except Exception as e:
+        print(f"Error fetching user category IDs: {e}")
+        return set()
+
+
 def load_categories_from_db(user_id):
     """Load categories for a specific user from database."""
     try:
@@ -487,8 +566,11 @@ def post_tasks():
         if tasks is None:
             return jsonify({'error': 'Invalid JSON payload'}), 400
 
-        # Validate tasks before saving
-        validate_tasks(tasks, user_id)
+        # Get user's valid category IDs for ownership validation
+        valid_category_ids = get_user_category_ids(user_id)
+
+        # Validate tasks before saving (including category ownership)
+        validate_tasks(tasks, user_id, valid_category_ids)
         save_tasks(tasks, user_id)
         return jsonify({'success': True})
     except ValidationError as e:
