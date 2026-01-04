@@ -1,6 +1,6 @@
 # ToDo App
 
-A simple web-based task manager with priority levels, timestamps, and Google OAuth authentication. Each user has their own private task list. Backed by PostgreSQL.
+A simple web-based task manager with priority levels, categories, timestamps, and Google OAuth authentication. Each user has their own private task list. Backed by PostgreSQL.
 
 ## Requirements
 
@@ -108,6 +108,7 @@ Then open http://localhost:3000 in your browser.
 
 - **Google OAuth** - Secure authentication with Google accounts
 - **Private task lists** - Each user has their own tasks
+- **Categories** - Organize tasks into custom categories (e.g., Work, Personal)
 - **Email whitelist** - Control who can access the app
 - **Add tasks** with priority levels
 - **Edit tasks** inline by clicking the Edit button
@@ -115,11 +116,21 @@ Then open http://localhost:3000 in your browser.
 - **Delete tasks**
 - **Change priority** using colored buttons on hover
 - **Search tasks** by text
-- **Filter tasks** by All, Active, or Completed
+- **Filter tasks** by status (All, Active, Completed) or by category
 - **Pagination** - automatic pagination when more than 20 tasks
 - **Timestamps** for creation and completion
 - **Color-coded priorities** - task boxes are colored by importance
 - **Smart sorting** - tasks sorted by priority (high to low), then by date
+
+## Categories
+
+Organize your tasks into categories:
+
+1. Click **+ Manage** next to the category filters
+2. Add categories like "Work", "Personal", "Shopping", etc.
+3. Select a category when creating a new task
+4. Filter tasks by clicking on category buttons
+5. Delete categories from the manage modal (tasks become uncategorized)
 
 ## Setting Priority
 
@@ -158,6 +169,41 @@ Run with coverage:
 python -m pytest test_server.py --cov=server --cov-report=term-missing
 ```
 
+## Building Docker Images
+
+### Local Build
+
+Use the build script to run tests and build a Docker image:
+
+```bash
+./build.sh                      # Build with default tag (latest)
+IMAGE_TAG=v1.0.0 ./build.sh     # Build with specific tag
+```
+
+The script will:
+1. Install dependencies
+2. Run all tests
+3. Build Docker image only if tests pass
+
+### CI/CD Pipeline
+
+The project includes GitHub Actions workflows:
+
+- **CI** (`.github/workflows/ci.yml`): Runs tests on every push and pull request
+- **Release** (`.github/workflows/release.yml`): Builds and pushes Docker images on releases
+
+To create a release:
+1. Go to GitHub → Releases → Create new release
+2. Create a tag with semantic versioning (e.g., `v1.0.0`)
+3. Publish the release
+4. Tests run automatically, then Docker image is built and pushed to `ghcr.io`
+
+Docker images are tagged with:
+- Full version: `ghcr.io/username/todo:v1.0.0`
+- Minor version: `ghcr.io/username/todo:v1.0`
+- Major version: `ghcr.io/username/todo:v1`
+- Latest: `ghcr.io/username/todo:latest`
+
 ## Production Deployment
 
 For production:
@@ -165,3 +211,4 @@ For production:
 2. Set a strong `SECRET_KEY` environment variable
 3. Use a production WSGI server (e.g., Gunicorn)
 4. Update the OAuth redirect URI to your production domain
+5. Pull the latest Docker image from GitHub Container Registry
